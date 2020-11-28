@@ -1,0 +1,8 @@
+[package]
+name = "p4-to-gcl"
+description = "Compiles P4 code to GCL (Guarded Command Language)"
+version = "0.1.0"
+authors = ["Mark Drobnak <mtd8050@rit.edu>"]
+edition = "2018"
+
+[dependencies]
