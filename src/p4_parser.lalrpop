@@ -1,0 +1,11 @@
+use crate::ast::*;
+
+grammar;
+
+pub Program: Program = Statement* => Program { statements: <> };
+
+Statement: Statement = {
+    "#include" "<" <Path> ">" => Statement::Import { path: <> }
+};
+
+Path: String = r"[a-zA-Z0-9.]+" => <>.to_string();
