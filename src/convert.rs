@@ -35,11 +35,11 @@ impl ToGcl for ControlDecl {
     type Output = Option<GclCommand>;
 
     fn to_gcl(&self) -> Self::Output {
-        let mut iterator = self.body.iter().map(Statement::to_gcl);
-        let first = iterator.next()?;
+        let mut iterator = self.body.iter().map(Statement::to_gcl).rev();
+        let last = iterator.next()?;
 
-        Some(iterator.fold(first, |acc, next| {
-            GclCommand::Sequence(Box::new(acc), Box::new(next))
+        Some(iterator.fold(last, |acc, next| {
+            GclCommand::Sequence(Box::new(next), Box::new(acc))
         }))
     }
 }
