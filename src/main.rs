@@ -4,6 +4,7 @@ extern crate lalrpop_util;
 use std::io::Read;
 
 mod ast;
+mod gcl;
 
 lalrpop_mod!(p4_parser);
 
