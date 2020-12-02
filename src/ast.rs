@@ -12,7 +12,7 @@ pub enum Declaration {
 pub struct ControlDecl {
     pub name: String,
     pub params: Vec<Param>,
-    pub body: Vec<Statement>,
+    pub body: BlockStatement,
 }
 
 #[derive(Debug)]
@@ -30,8 +30,13 @@ pub enum ParamDirection {
 }
 
 #[derive(Debug)]
+pub struct BlockStatement(pub Vec<Statement>);
+
+#[derive(Debug)]
 pub enum Statement {
     Assignment(Assignment),
+    Block(BlockStatement),
+    If(IfStatement),
     // actions, tables, apply block
 }
 
@@ -40,6 +45,13 @@ pub struct Assignment {
     pub ty: String,
     pub name: String,
     pub value: Expr,
+}
+
+#[derive(Debug)]
+pub struct IfStatement {
+    pub condition: Expr,
+    pub then_case: BlockStatement,
+    pub else_case: Option<BlockStatement>,
 }
 
 #[derive(Debug)]

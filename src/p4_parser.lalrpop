@@ -8,17 +8,27 @@ Declaration: Declaration = {
     ControlDecl => Declaration::Control(<>)
 };
 
-ControlDecl: ControlDecl = "control" <name:Identifier> "(" <params:Comma<Param>> ")" "{" <body:Semi<Statement>> "}"
+ControlDecl: ControlDecl = "control" <name:Identifier> "(" <params:Comma<Param>> ")" <body:BlockStatement>
     => ControlDecl { name, params, body };
 
 Param: Param = <direction:ParamDirection> <ty:TypeRef> <name:Identifier>
     => Param { direction, ty, name };
 
 Statement: Statement = {
-    Assignment => Statement::Assignment(<>)
+    Assignment => Statement::Assignment(<>),
+    BlockStatement => Statement::Block(<>),
+    IfStatement => Statement::If(<>)
 };
 
+BlockStatement: BlockStatement = "{" <Semi<Statement>> "}" => BlockStatement(<>);
+
 Assignment: Assignment = <ty:TypeRef> <name:Identifier> "=" <value:Expr> => Assignment { ty, name, value };
+
+IfStatement: IfStatement = {
+    // To avoid ambiguity, only allow block statements in then/else
+    "if" "(" <condition:Expr> ")" <then_case:BlockStatement> <else_case:("else" <BlockStatement>)?>
+        => IfStatement { condition, then_case, else_case }
+};
 
 Expr: Expr = {
     Bool => Expr::Bool(<>),
