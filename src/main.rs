@@ -9,7 +9,10 @@ mod ast;
 mod convert;
 mod gcl;
 
-lalrpop_mod!(p4_parser);
+lalrpop_mod!(
+    #[allow(clippy::all)]
+    p4_parser
+);
 
 fn main() {
     // Read P4 program
