@@ -4,6 +4,7 @@ use crate::ast::{
     Assignment, BlockStatement, ControlDecl, Declaration, Expr, IfStatement, Program, Statement,
 };
 use crate::gcl::{GclAssignment, GclCommand, GclExpr, GclPredicate};
+use std::collections::HashMap;
 
 /// A "no operation" command in GCL
 const GCL_NO_OP: GclCommand = GclCommand::Assumption(GclPredicate::Expr(GclExpr::Bool(true)));
@@ -16,7 +17,7 @@ pub trait ToGcl {
 }
 
 impl ToGcl for Program {
-    type Output = Vec<GclCommand>;
+    type Output = HashMap<String, GclCommand>;
 
     fn to_gcl(&self) -> Self::Output {
         self.declarations.iter().map(Declaration::to_gcl).collect()
@@ -24,7 +25,7 @@ impl ToGcl for Program {
 }
 
 impl ToGcl for Declaration {
-    type Output = GclCommand;
+    type Output = (String, GclCommand);
 
     fn to_gcl(&self) -> Self::Output {
         match self {
@@ -34,10 +35,10 @@ impl ToGcl for Declaration {
 }
 
 impl ToGcl for ControlDecl {
-    type Output = GclCommand;
+    type Output = (String, GclCommand);
 
     fn to_gcl(&self) -> Self::Output {
-        self.body.to_gcl()
+        (self.name.clone(), self.body.to_gcl())
     }
 }
 

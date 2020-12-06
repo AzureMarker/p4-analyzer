@@ -29,7 +29,7 @@ fn main() {
     println!("{:#?}\n", p4_program);
 
     let gcl_programs = p4_program.to_gcl();
-    for (i, gcl_program) in gcl_programs.iter().enumerate() {
-        println!("Program {}: {}", i + 1, gcl_program);
+    for (name, gcl_program) in gcl_programs {
+        println!("Program '{}': {}", name, gcl_program);
     }
 }
