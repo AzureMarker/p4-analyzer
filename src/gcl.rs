@@ -38,10 +38,10 @@ pub enum GclPredicate {
 impl Display for GclPredicate {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            GclPredicate::Equality(e1, e2) => write!(f, "{} = {}", e1, e2),
-            GclPredicate::Conjunction(p1, p2) => write!(f, "{} && {}", p1, p2),
-            GclPredicate::Disjunction(p1, p2) => write!(f, "{} || {}", p1, p2),
-            GclPredicate::Implication(p1, p2) => write!(f, "{} => {}", p1, p2),
+            GclPredicate::Equality(e1, e2) => write!(f, "({}) = ({})", e1, e2),
+            GclPredicate::Conjunction(p1, p2) => write!(f, "({}) && ({})", p1, p2),
+            GclPredicate::Disjunction(p1, p2) => write!(f, "({}) || ({})", p1, p2),
+            GclPredicate::Implication(p1, p2) => write!(f, "({}) => ({})", p1, p2),
             GclPredicate::Negation(pred) => write!(f, "!({})", pred),
             GclPredicate::Bool(e) => Display::fmt(e, f),
             GclPredicate::Var(name) => f.write_str(&name),
