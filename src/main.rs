@@ -3,11 +3,13 @@ extern crate lalrpop_util;
 
 use crate::ast::Program;
 use crate::convert::ToGcl;
+use crate::gcl::GclPredicate;
 use std::io::Read;
 
 mod ast;
 mod convert;
 mod gcl;
+mod verification;
 
 lalrpop_mod!(
     #[allow(clippy::all)]
@@ -30,6 +32,7 @@ fn main() {
 
     let gcl_programs = p4_program.to_gcl();
     for (name, gcl_program) in gcl_programs {
-        println!("Program '{}': {}", name, gcl_program);
+        println!("\nProgram '{}': {}", name, gcl_program);
+        println!("WLP: {}", gcl_program.to_wlp(GclPredicate::Bool(true)));
     }
 }

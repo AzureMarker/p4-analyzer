@@ -31,7 +31,20 @@ IfStatement: IfStatement = {
 };
 
 Expr: Expr = {
+    <left:Expr> "||" <right:FactorExpr> => Expr::Or(Box::new(left), Box::new(right)),
+    FactorExpr
+};
+
+FactorExpr: Expr = {
+    <left:FactorExpr> "&&" <right:TerminalExpr> => Expr::And(Box::new(left), Box::new(right)),
+    "!" <TerminalExpr> => Expr::Negation(Box::new(<>)),
+    TerminalExpr
+};
+
+TerminalExpr: Expr = {
     Bool => Expr::Bool(<>),
+    Identifier => Expr::Var(<>),
+    "(" <Expr> ")"
 };
 
 Bool: bool = {

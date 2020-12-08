@@ -3,11 +3,11 @@
 use crate::ast::{
     Assignment, BlockStatement, ControlDecl, Declaration, Expr, IfStatement, Program, Statement,
 };
-use crate::gcl::{GclAssignment, GclCommand, GclExpr, GclPredicate};
+use crate::gcl::{GclAssignment, GclCommand, GclPredicate};
 use std::collections::HashMap;
 
 /// A "no operation" command in GCL
-const GCL_NO_OP: GclCommand = GclCommand::Assumption(GclPredicate::Expr(GclExpr::Bool(true)));
+const GCL_NO_OP: GclCommand = GclCommand::Assumption(GclPredicate::Bool(true));
 
 /// Trait for converting a P4 AST node into GCL
 pub trait ToGcl {
@@ -63,7 +63,7 @@ impl ToGcl for Statement {
             Statement::Assignment(Assignment { name, value, .. }) => {
                 GclCommand::Assignment(GclAssignment {
                     name: name.clone(),
-                    expr: value.to_gcl(),
+                    pred: value.to_gcl(),
                 })
             }
             Statement::Block(block) => block.to_gcl(),
@@ -72,7 +72,7 @@ impl ToGcl for Statement {
                 then_case,
                 else_case,
             }) => {
-                let pred = GclPredicate::Expr(condition.to_gcl());
+                let pred = condition.to_gcl();
                 let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
                 let then_case_gcl = then_case.to_gcl();
                 let else_case_gcl = else_case
@@ -101,11 +101,19 @@ impl ToGcl for Statement {
 }
 
 impl ToGcl for Expr {
-    type Output = GclExpr;
+    type Output = GclPredicate;
 
     fn to_gcl(&self) -> Self::Output {
         match self {
-            Expr::Bool(b) => GclExpr::Bool(*b),
+            Expr::Bool(b) => GclPredicate::Bool(*b),
+            Expr::Var(name) => GclPredicate::Var(name.clone()),
+            Expr::And(left, right) => {
+                GclPredicate::Conjunction(Box::new(left.to_gcl()), Box::new(right.to_gcl()))
+            }
+            Expr::Or(left, right) => {
+                GclPredicate::Disjunction(Box::new(left.to_gcl()), Box::new(right.to_gcl()))
+            }
+            Expr::Negation(inner) => GclPredicate::Negation(Box::new(inner.to_gcl())),
         }
     }
 }

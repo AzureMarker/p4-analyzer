@@ -57,4 +57,8 @@ pub struct IfStatement {
 #[derive(Debug)]
 pub enum Expr {
     Bool(bool),
+    Var(String),
+    And(Box<Expr>, Box<Expr>),
+    Or(Box<Expr>, Box<Expr>),
+    Negation(Box<Expr>),
 }
