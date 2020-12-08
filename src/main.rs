@@ -32,7 +32,11 @@ fn main() {
 
     let gcl_programs = p4_program.to_gcl();
     for (name, gcl_program) in gcl_programs {
-        println!("\nProgram '{}': {}", name, gcl_program);
-        println!("WLP: {}", gcl_program.to_wlp(GclPredicate::Bool(true)));
+        println!(
+            "\nProgram '{}'\n  GCL: {}\n  WLP: {}",
+            name,
+            gcl_program,
+            gcl_program.to_wlp(GclPredicate::Bool(true))
+        );
     }
 }
