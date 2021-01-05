@@ -5,11 +5,13 @@ use crate::ast::Program;
 use crate::convert::ToGcl;
 use crate::gcl::GclPredicate;
 use std::io::Read;
+use z3::{Config, Context, Solver};
 
 mod ast;
 mod convert;
 mod gcl;
-mod verification;
+mod to_wlp;
+mod verify_wlp;
 
 lalrpop_mod!(
     #[allow(clippy::all)]
@@ -31,12 +33,21 @@ fn main() {
     println!("{:#?}\n", p4_program);
 
     let gcl_programs = p4_program.to_gcl();
+    let config = Config::new();
+    let context = Context::new(&config);
+    let solver = Solver::new(&context);
+
     for (name, gcl_program) in gcl_programs {
+        let wlp_predicate = gcl_program.to_wlp(GclPredicate::Bool(true));
+        let z3_bool = wlp_predicate.as_z3_bool(&context);
+        solver.assert(&z3_bool);
+        let z3_output = solver.check();
+
         println!(
-            "\nProgram '{}'\n  GCL: {}\n  WLP: {}",
-            name,
-            gcl_program,
-            gcl_program.to_wlp(GclPredicate::Bool(true))
+            "\nProgram '{}'\n  GCL: {}\n  WLP: {}\n  Z3: {}\n  Output: {:?}",
+            name, gcl_program, wlp_predicate, z3_bool, z3_output
         );
+
+        solver.reset();
     }
 }
