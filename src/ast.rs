@@ -1,3 +1,5 @@
+pub type TypeRef = String;
+
 #[derive(Debug)]
 pub struct Program {
     pub declarations: Vec<Declaration>,
@@ -12,18 +14,32 @@ pub enum Declaration {
 pub struct ControlDecl {
     pub name: String,
     pub params: Vec<Param>,
-    pub body: BlockStatement,
+    pub local_decls: Vec<ControlLocalDecl>,
+    pub apply_body: BlockStatement,
 }
 
 #[derive(Debug)]
-pub struct Param {
-    pub direction: ParamDirection,
-    pub ty: String,
+pub enum ControlLocalDecl {
+    VariableDecl(VariableDecl),
+    Instantiation(Instantiation),
+}
+
+#[derive(Debug)]
+pub struct Instantiation {
+    pub ty: TypeRef,
+    // todo: arguments
     pub name: String,
 }
 
 #[derive(Debug)]
-pub enum ParamDirection {
+pub struct Param {
+    pub direction: Direction,
+    pub ty: TypeRef,
+    pub name: String,
+}
+
+#[derive(Debug)]
+pub enum Direction {
     In,
     Out,
     InOut,
@@ -34,17 +50,17 @@ pub struct BlockStatement(pub Vec<Statement>);
 
 #[derive(Debug)]
 pub enum Statement {
-    Assignment(Assignment),
+    VariableDecl(VariableDecl),
     Block(BlockStatement),
     If(IfStatement),
     // actions, tables, apply block
 }
 
 #[derive(Debug)]
-pub struct Assignment {
-    pub ty: String,
+pub struct VariableDecl {
+    pub ty: TypeRef,
     pub name: String,
-    pub value: Expr,
+    pub value: Option<Expr>,
 }
 
 #[derive(Debug)]

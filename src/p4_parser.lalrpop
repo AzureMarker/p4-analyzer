@@ -8,21 +8,32 @@ Declaration: Declaration = {
     ControlDecl => Declaration::Control(<>)
 };
 
-ControlDecl: ControlDecl = "control" <name:Identifier> "(" <params:Comma<Param>> ")" <body:BlockStatement>
-    => ControlDecl { name, params, body };
+ControlDecl: ControlDecl =
+    "control" <name:Identifier> "(" <params:Comma<Param>> ")"
+        "{" <local_decls:ControlLocalDecl*> "apply" <apply_body:BlockStatement> "}"
+    => ControlDecl { name, params, local_decls, apply_body };
 
-Param: Param = <direction:ParamDirection> <ty:TypeRef> <name:Identifier>
+ControlLocalDecl: ControlLocalDecl = {
+    VariableDecl => ControlLocalDecl::VariableDecl(<>),
+    Instantiation => ControlLocalDecl::Instantiation(<>)
+};
+
+Param: Param = <direction:Direction> <ty:TypeRef> <name:Identifier>
     => Param { direction, ty, name };
 
 Statement: Statement = {
-    Assignment => Statement::Assignment(<>),
+    VariableDecl => Statement::VariableDecl(<>),
     BlockStatement => Statement::Block(<>),
     IfStatement => Statement::If(<>)
 };
 
-BlockStatement: BlockStatement = "{" <Semi<Statement>> "}" => BlockStatement(<>);
+BlockStatement: BlockStatement = "{" <Statement*> "}" => BlockStatement(<>);
 
-Assignment: Assignment = <ty:TypeRef> <name:Identifier> "=" <value:Expr> => Assignment { ty, name, value };
+Instantiation: Instantiation = <ty:TypeRef> "(" ")" <name:Identifier> ";" => Instantiation { ty, name };
+
+VariableDecl: VariableDecl = {
+    <ty:TypeRef> <name:Identifier> <value:("=" <Expr>)?> ";" => VariableDecl { ty, name, value },
+};
 
 IfStatement: IfStatement = {
     // To avoid ambiguity, only allow block statements in then/else
@@ -52,10 +63,10 @@ Bool: bool = {
     "false" => false
 };
 
-ParamDirection: ParamDirection = {
-    "in" => ParamDirection::In,
-    "out" => ParamDirection::Out,
-    "inout" => ParamDirection::InOut
+Direction: Direction = {
+    "in" => Direction::In,
+    "out" => Direction::Out,
+    "inout" => Direction::InOut
 };
 
 // Treat types as identifiers for simplicity
@@ -66,12 +77,10 @@ Identifier: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => <>.to_string();
 // File path, must contain a period
 Path: String = r"[a-zA-Z0-9_.]+\.[a-zA-Z0-9_]+" => <>.to_string();
 
-Deliminate<T, S>: Vec<T> = {
-    <mut v:(<T> S)*> <e:T?> => {
-        v.extend(e);
-        v
-    }
+// Allows trailing element
+Comma<T>: Vec<T> = {
+   <mut v:(<T> ",")*> <e:T?> => {
+       v.extend(e);
+       v
+   }
 };
-
-Comma<T> = Deliminate<T, ",">;
-Semi<T> = Deliminate<T, ";">;

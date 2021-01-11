@@ -1,7 +1,8 @@
 //! Convert P4 to GCL
 
 use crate::ast::{
-    Assignment, BlockStatement, ControlDecl, Declaration, Expr, IfStatement, Program, Statement,
+    BlockStatement, ControlDecl, ControlLocalDecl, Declaration, Expr, IfStatement, Instantiation,
+    Program, Statement, VariableDecl,
 };
 use crate::gcl::{GclAssignment, GclCommand, GclPredicate};
 use std::collections::HashMap;
@@ -38,7 +39,38 @@ impl ToGcl for ControlDecl {
     type Output = (String, GclCommand);
 
     fn to_gcl(&self) -> Self::Output {
-        (self.name.clone(), self.body.to_gcl())
+        (
+            self.name.clone(),
+            GclCommand::Sequence(
+                Box::new(self.local_decls.to_gcl()),
+                Box::new(self.apply_body.to_gcl()),
+            ),
+        )
+    }
+}
+
+impl<T: ToGcl<Output = GclCommand>> ToGcl for [T] {
+    type Output = GclCommand;
+
+    fn to_gcl(&self) -> Self::Output {
+        match self.split_first() {
+            Some((head, [])) => head.to_gcl(),
+            Some((head, tail)) => {
+                GclCommand::Sequence(Box::new(head.to_gcl()), Box::new(tail.to_gcl()))
+            }
+            None => GCL_NO_OP,
+        }
+    }
+}
+
+impl ToGcl for ControlLocalDecl {
+    type Output = GclCommand;
+
+    fn to_gcl(&self) -> Self::Output {
+        match self {
+            ControlLocalDecl::VariableDecl(var_decl) => var_decl.to_gcl(),
+            ControlLocalDecl::Instantiation(instantiation) => instantiation.to_gcl(),
+        }
     }
 }
 
@@ -60,43 +92,87 @@ impl ToGcl for Statement {
 
     fn to_gcl(&self) -> Self::Output {
         match self {
-            Statement::Assignment(Assignment { name, value, .. }) => {
-                GclCommand::Assignment(GclAssignment {
-                    name: name.clone(),
-                    pred: value.to_gcl(),
-                })
-            }
+            Statement::VariableDecl(var_decl) => var_decl.to_gcl(),
             Statement::Block(block) => block.to_gcl(),
-            Statement::If(IfStatement {
-                condition,
-                then_case,
-                else_case,
-            }) => {
-                let pred = condition.to_gcl();
-                let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
-                let then_case_gcl = then_case.to_gcl();
-                let else_case_gcl = else_case
-                    .as_ref()
-                    .map(BlockStatement::to_gcl)
-                    .unwrap_or(GCL_NO_OP);
-
-                // A choice of two branches.
-                // The "then" branch assumes the conditional, while the "else"
-                // branch assumes the negated conditional.
-                // TODO: is this the correct translation of an "if" into p4v's
-                //       version of GCL?
-                GclCommand::Choice(
-                    Box::new(GclCommand::Sequence(
-                        Box::new(GclCommand::Assumption(pred)),
-                        Box::new(then_case_gcl),
-                    )),
-                    Box::new(GclCommand::Sequence(
-                        Box::new(GclCommand::Assumption(negated_pred)),
-                        Box::new(else_case_gcl),
-                    )),
-                )
-            }
+            Statement::If(if_statement) => if_statement.to_gcl(),
         }
+    }
+}
+
+impl ToGcl for VariableDecl {
+    type Output = GclCommand;
+
+    fn to_gcl(&self) -> Self::Output {
+        let has_value_command = GclCommand::Assignment(GclAssignment {
+            name: format!("_var_has_value__{}", self.name),
+            pred: GclPredicate::Bool(self.value.is_some()),
+        });
+
+        match self.value.as_ref() {
+            Some(value) => GclCommand::Sequence(
+                Box::new(has_value_command),
+                Box::new(GclCommand::Assignment(GclAssignment {
+                    name: self.name.clone(),
+                    pred: value.to_gcl(),
+                })),
+            ),
+            None => has_value_command,
+        }
+    }
+}
+
+impl ToGcl for Instantiation {
+    type Output = GclCommand;
+
+    fn to_gcl(&self) -> Self::Output {
+        GclCommand::Assignment(GclAssignment {
+            name: format!("_var_has_value__{}", self.name),
+            pred: GclPredicate::Bool(false),
+        })
+    }
+}
+
+impl ToGcl for IfStatement {
+    type Output = GclCommand;
+
+    fn to_gcl(&self) -> Self::Output {
+        // Make sure that all the variables read by this conditional have a value
+        let vars = self.condition.find_all_vars();
+        let mut var_value_check_iter = vars
+            .into_iter()
+            .map(|var| GclCommand::Assert(GclPredicate::Var(format!("_var_has_value__{}", var))));
+        let var_value_check_first = var_value_check_iter.next().unwrap_or(GCL_NO_OP);
+        let var_value_check_gcl = var_value_check_iter.rfold(var_value_check_first, |acc, next| {
+            GclCommand::Sequence(Box::new(next), Box::new(acc))
+        });
+
+        let pred = self.condition.to_gcl();
+        let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
+        let then_case_gcl = self.then_case.to_gcl();
+        let else_case_gcl = self
+            .else_case
+            .as_ref()
+            .map(BlockStatement::to_gcl)
+            .unwrap_or(GCL_NO_OP);
+
+        // A choice of two branches.
+        // The "then" branch assumes the conditional, while the "else"
+        // branch assumes the negated conditional.
+        // TODO: is this the correct translation of an "if" into p4v's
+        //       version of GCL?
+        GclCommand::Sequence(
+            Box::new(var_value_check_gcl),
+            Box::new(GclCommand::Choice(
+                Box::new(GclCommand::Sequence(
+                    Box::new(GclCommand::Assumption(pred)),
+                    Box::new(then_case_gcl),
+                )),
+                Box::new(GclCommand::Sequence(
+                    Box::new(GclCommand::Assumption(negated_pred)),
+                    Box::new(else_case_gcl),
+                )),
+            )),
+        )
     }
 }
 
@@ -114,6 +190,22 @@ impl ToGcl for Expr {
                 GclPredicate::Disjunction(Box::new(left.to_gcl()), Box::new(right.to_gcl()))
             }
             Expr::Negation(inner) => GclPredicate::Negation(Box::new(inner.to_gcl())),
+        }
+    }
+}
+
+impl Expr {
+    /// Get all of the variables this expression reads from
+    fn find_all_vars(&self) -> Vec<String> {
+        match self {
+            Expr::Bool(_) => Vec::new(),
+            Expr::Var(name) => vec![name.clone()],
+            Expr::And(left, right) | Expr::Or(left, right) => {
+                let mut vars = left.find_all_vars();
+                vars.extend(right.find_all_vars());
+                vars
+            }
+            Expr::Negation(inner) => inner.find_all_vars(),
         }
     }
 }
