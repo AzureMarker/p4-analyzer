@@ -8,6 +8,7 @@ pub struct Program {
 #[derive(Debug)]
 pub enum Declaration {
     Control(ControlDecl),
+    Constant(ConstantDecl),
 }
 
 #[derive(Debug)]
@@ -20,8 +21,9 @@ pub struct ControlDecl {
 
 #[derive(Debug)]
 pub enum ControlLocalDecl {
-    VariableDecl(VariableDecl),
+    Variable(VariableDecl),
     Instantiation(Instantiation),
+    Constant(ConstantDecl),
 }
 
 #[derive(Debug)]
@@ -46,14 +48,21 @@ pub enum Direction {
 }
 
 #[derive(Debug)]
-pub struct BlockStatement(pub Vec<Statement>);
+pub struct BlockStatement(pub Vec<StatementOrDecl>);
 
 #[derive(Debug)]
 pub enum Statement {
-    VariableDecl(VariableDecl),
     Block(BlockStatement),
     If(IfStatement),
     // actions, tables, apply block
+}
+
+#[derive(Debug)]
+pub enum StatementOrDecl {
+    Statement(Statement),
+    VariableDecl(VariableDecl),
+    ConstantDecl(ConstantDecl),
+    Instantiation(Instantiation),
 }
 
 #[derive(Debug)]
@@ -61,6 +70,13 @@ pub struct VariableDecl {
     pub ty: TypeRef,
     pub name: String,
     pub value: Option<Expr>,
+}
+
+#[derive(Debug)]
+pub struct ConstantDecl {
+    pub ty: TypeRef,
+    pub name: String,
+    pub initializer: Expr,
 }
 
 #[derive(Debug)]

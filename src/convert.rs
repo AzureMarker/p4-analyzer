@@ -1,8 +1,8 @@
 //! Convert P4 to GCL
 
 use crate::ast::{
-    BlockStatement, ControlDecl, ControlLocalDecl, Declaration, Expr, IfStatement, Instantiation,
-    Program, Statement, VariableDecl,
+    BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl, Declaration, Expr, IfStatement,
+    Instantiation, Program, Statement, StatementOrDecl, VariableDecl,
 };
 use crate::gcl::{GclAssignment, GclCommand, GclPredicate};
 use std::collections::HashMap;
@@ -31,6 +31,7 @@ impl ToGcl for Declaration {
     fn to_gcl(&self) -> Self::Output {
         match self {
             Declaration::Control(control) => control.to_gcl(),
+            Declaration::Constant(const_decl) => (const_decl.name.clone(), const_decl.to_gcl()),
         }
     }
 }
@@ -45,6 +46,23 @@ impl ToGcl for ControlDecl {
                 Box::new(self.local_decls.to_gcl()),
                 Box::new(self.apply_body.to_gcl()),
             ),
+        )
+    }
+}
+
+impl ToGcl for ConstantDecl {
+    type Output = GclCommand;
+
+    fn to_gcl(&self) -> Self::Output {
+        GclCommand::Sequence(
+            Box::new(GclCommand::Assignment(GclAssignment {
+                name: format!("_var_has_value__{}", self.name),
+                pred: GclPredicate::Bool(true),
+            })),
+            Box::new(GclCommand::Assignment(GclAssignment {
+                name: self.name.clone(),
+                pred: self.initializer.to_gcl(),
+            })),
         )
     }
 }
@@ -68,8 +86,9 @@ impl ToGcl for ControlLocalDecl {
 
     fn to_gcl(&self) -> Self::Output {
         match self {
-            ControlLocalDecl::VariableDecl(var_decl) => var_decl.to_gcl(),
+            ControlLocalDecl::Variable(var_decl) => var_decl.to_gcl(),
             ControlLocalDecl::Instantiation(instantiation) => instantiation.to_gcl(),
+            ControlLocalDecl::Constant(const_decl) => const_decl.to_gcl(),
         }
     }
 }
@@ -78,7 +97,7 @@ impl ToGcl for BlockStatement {
     type Output = GclCommand;
 
     fn to_gcl(&self) -> Self::Output {
-        let mut iterator = self.0.iter().map(Statement::to_gcl).rev();
+        let mut iterator = self.0.iter().map(StatementOrDecl::to_gcl).rev();
         let last = iterator.next().unwrap_or(GCL_NO_OP);
 
         iterator.fold(last, |acc, next| {
@@ -87,12 +106,24 @@ impl ToGcl for BlockStatement {
     }
 }
 
+impl ToGcl for StatementOrDecl {
+    type Output = GclCommand;
+
+    fn to_gcl(&self) -> Self::Output {
+        match self {
+            StatementOrDecl::Statement(statement) => statement.to_gcl(),
+            StatementOrDecl::VariableDecl(var_decl) => var_decl.to_gcl(),
+            StatementOrDecl::ConstantDecl(const_decl) => const_decl.to_gcl(),
+            StatementOrDecl::Instantiation(instantiation) => instantiation.to_gcl(),
+        }
+    }
+}
+
 impl ToGcl for Statement {
     type Output = GclCommand;
 
     fn to_gcl(&self) -> Self::Output {
         match self {
-            Statement::VariableDecl(var_decl) => var_decl.to_gcl(),
             Statement::Block(block) => block.to_gcl(),
             Statement::If(if_statement) => if_statement.to_gcl(),
         }

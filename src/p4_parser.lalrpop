@@ -5,7 +5,8 @@ grammar;
 pub Program: Program = Declaration* => Program { declarations: <> };
 
 Declaration: Declaration = {
-    ControlDecl => Declaration::Control(<>)
+    ControlDecl => Declaration::Control(<>),
+    ConstantDecl => Declaration::Constant(<>)
 };
 
 ControlDecl: ControlDecl =
@@ -14,26 +15,36 @@ ControlDecl: ControlDecl =
     => ControlDecl { name, params, local_decls, apply_body };
 
 ControlLocalDecl: ControlLocalDecl = {
-    VariableDecl => ControlLocalDecl::VariableDecl(<>),
-    Instantiation => ControlLocalDecl::Instantiation(<>)
+    VariableDecl => ControlLocalDecl::Variable(<>),
+    Instantiation => ControlLocalDecl::Instantiation(<>),
+    ConstantDecl => ControlLocalDecl::Constant(<>)
 };
 
 Param: Param = <direction:Direction> <ty:TypeRef> <name:Identifier>
     => Param { direction, ty, name };
 
 Statement: Statement = {
-    VariableDecl => Statement::VariableDecl(<>),
     BlockStatement => Statement::Block(<>),
     IfStatement => Statement::If(<>)
 };
 
-BlockStatement: BlockStatement = "{" <Statement*> "}" => BlockStatement(<>);
+StatementOrDecl: StatementOrDecl = {
+    Statement => StatementOrDecl::Statement(<>),
+    VariableDecl => StatementOrDecl::VariableDecl(<>),
+    ConstantDecl => StatementOrDecl::ConstantDecl(<>),
+    Instantiation => StatementOrDecl::Instantiation(<>)
+};
+
+BlockStatement: BlockStatement = "{" <StatementOrDecl*> "}" => BlockStatement(<>);
 
 Instantiation: Instantiation = <ty:TypeRef> "(" ")" <name:Identifier> ";" => Instantiation { ty, name };
 
 VariableDecl: VariableDecl = {
     <ty:TypeRef> <name:Identifier> <value:("=" <Expr>)?> ";" => VariableDecl { ty, name, value },
 };
+
+ConstantDecl: ConstantDecl = "const" <ty:TypeRef> <name:Identifier> "=" <initializer:Expr> ";"
+    => ConstantDecl { ty, name, initializer };
 
 IfStatement: IfStatement = {
     // To avoid ambiguity, only allow block statements in then/else
