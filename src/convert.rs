@@ -199,7 +199,7 @@ impl ToGcl for Instantiation {
     fn to_gcl(&self) -> Self::Output {
         GclCommand::Assignment(GclAssignment {
             name: format!("_var_has_value__{}", self.name),
-            pred: GclPredicate::Bool(false),
+            pred: GclPredicate::Bool(true),
         })
     }
 }
