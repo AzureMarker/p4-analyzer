@@ -1,8 +1,8 @@
 //! Convert P4 to GCL
 
 use crate::ast::{
-    BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl, Declaration, Expr, IfStatement,
-    Instantiation, Program, Statement, StatementOrDecl, VariableDecl,
+    ActionDecl, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl, Declaration, Expr,
+    IfStatement, Instantiation, Program, Statement, StatementOrDecl, VariableDecl,
 };
 use crate::gcl::{GclAssignment, GclCommand, GclPredicate};
 use std::collections::HashMap;
@@ -21,32 +21,61 @@ impl ToGcl for Program {
     type Output = HashMap<String, GclCommand>;
 
     fn to_gcl(&self) -> Self::Output {
-        self.declarations.iter().map(Declaration::to_gcl).collect()
+        self.declarations
+            .iter()
+            .flat_map(Declaration::to_gcl)
+            .collect()
     }
 }
 
 impl ToGcl for Declaration {
-    type Output = (String, GclCommand);
+    type Output = Vec<(String, GclCommand)>;
 
     fn to_gcl(&self) -> Self::Output {
         match self {
             Declaration::Control(control) => control.to_gcl(),
-            Declaration::Constant(const_decl) => (const_decl.name.clone(), const_decl.to_gcl()),
+            Declaration::Constant(const_decl) => {
+                vec![(const_decl.name.clone(), const_decl.to_gcl())]
+            }
         }
     }
 }
 
 impl ToGcl for ControlDecl {
-    type Output = (String, GclCommand);
+    type Output = Vec<(String, GclCommand)>;
 
     fn to_gcl(&self) -> Self::Output {
-        (
+        let mut top_level_commands = Vec::new();
+        let mut local_commands = None;
+
+        // Collect all of the top level local declarations (e.g. actions) and
+        // local declarations (e.g. variables).
+        for local_decl in &self.local_decls {
+            let (name, command) = local_decl.to_gcl();
+
+            if let Some(name) = name {
+                // This decl has a name, it is top-level
+                top_level_commands.push((name, command));
+            } else if let Some(local_command_inner) = local_commands {
+                local_commands = Some(GclCommand::Sequence(
+                    Box::new(command),
+                    Box::new(local_command_inner),
+                ));
+            } else {
+                local_commands = Some(command);
+            }
+        }
+
+        // Include this control decl in the top-level commands
+        top_level_commands.push((
             self.name.clone(),
             GclCommand::Sequence(
-                Box::new(self.local_decls.to_gcl()),
+                Box::new(local_commands.unwrap_or(GCL_NO_OP)),
                 Box::new(self.apply_body.to_gcl()),
             ),
-        )
+        ));
+
+        top_level_commands
     }
 }
 
@@ -82,14 +111,26 @@ impl<T: ToGcl<Output = GclCommand>> ToGcl for [T] {
 }
 
 impl ToGcl for ControlLocalDecl {
-    type Output = GclCommand;
+    type Output = (Option<String>, GclCommand);
 
     fn to_gcl(&self) -> Self::Output {
         match self {
-            ControlLocalDecl::Variable(var_decl) => var_decl.to_gcl(),
-            ControlLocalDecl::Instantiation(instantiation) => instantiation.to_gcl(),
-            ControlLocalDecl::Constant(const_decl) => const_decl.to_gcl(),
+            ControlLocalDecl::Variable(var_decl) => (None, var_decl.to_gcl()),
+            ControlLocalDecl::Instantiation(instantiation) => (None, instantiation.to_gcl()),
+            ControlLocalDecl::Constant(const_decl) => (None, const_decl.to_gcl()),
+            ControlLocalDecl::Action(action_decl) => {
+                let (name, command) = action_decl.to_gcl();
+                (Some(name), command)
+            }
         }
+    }
+}
+
+impl ToGcl for ActionDecl {
+    type Output = (String, GclCommand);
+
+    fn to_gcl(&self) -> Self::Output {
+        (self.name.clone(), self.body.to_gcl())
     }
 }
 

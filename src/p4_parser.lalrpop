@@ -17,8 +17,12 @@ ControlDecl: ControlDecl =
 ControlLocalDecl: ControlLocalDecl = {
     VariableDecl => ControlLocalDecl::Variable(<>),
     Instantiation => ControlLocalDecl::Instantiation(<>),
-    ConstantDecl => ControlLocalDecl::Constant(<>)
+    ConstantDecl => ControlLocalDecl::Constant(<>),
+    ActionDecl => ControlLocalDecl::Action(<>)
 };
+
+ActionDecl: ActionDecl = "action" <name:Identifier> "(" <params:Comma<Param>> ")" <body:BlockStatement>
+    => ActionDecl { name, params, body };
 
 Param: Param = <direction:Direction> <ty:TypeRef> <name:Identifier>
     => Param { direction, ty, name };

@@ -24,6 +24,14 @@ pub enum ControlLocalDecl {
     Variable(VariableDecl),
     Instantiation(Instantiation),
     Constant(ConstantDecl),
+    Action(ActionDecl),
+}
+
+#[derive(Debug)]
+pub struct ActionDecl {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub body: BlockStatement,
 }
 
 #[derive(Debug)]
