@@ -1,8 +1,9 @@
 //! Convert P4 to GCL
 
 use crate::ast::{
-    ActionDecl, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl, Declaration, Expr,
-    IfStatement, Instantiation, Program, Statement, StatementOrDecl, VariableDecl,
+    ActionDecl, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
+    Declaration, Expr, IfStatement, Instantiation, Program, Statement, StatementOrDecl,
+    VariableDecl,
 };
 use crate::gcl::{GclAssignment, GclCommand, GclPredicate};
 use std::collections::HashMap;
@@ -55,11 +56,11 @@ impl ToGcl for ControlDecl {
 
             if let Some(name) = name {
                 // This decl has a name, it is top-level
-                top_level_commands.push((name, command));
+                top_level_commands.push((format!("{}__{}", self.name, name), command));
             } else if let Some(local_command_inner) = local_commands {
                 local_commands = Some(GclCommand::Sequence(
-                    Box::new(command),
                     Box::new(local_command_inner),
+                    Box::new(command),
                 ));
             } else {
                 local_commands = Some(command);
@@ -90,7 +91,7 @@ impl ToGcl for ConstantDecl {
             })),
             Box::new(GclCommand::Assignment(GclAssignment {
                 name: self.name.clone(),
-                pred: self.initializer.to_gcl(),
+                pred: self.value.to_gcl(),
             })),
         )
     }
@@ -167,6 +168,7 @@ impl ToGcl for Statement {
         match self {
             Statement::Block(block) => block.to_gcl(),
             Statement::If(if_statement) => if_statement.to_gcl(),
+            Statement::Assignment(assignment) => assignment.to_gcl(),
         }
     }
 }
@@ -201,6 +203,23 @@ impl ToGcl for Instantiation {
             name: format!("_var_has_value__{}", self.name),
             pred: GclPredicate::Bool(true),
         })
+    }
+}
+
+impl ToGcl for Assignment {
+    type Output = GclCommand;
+
+    fn to_gcl(&self) -> Self::Output {
+        GclCommand::Sequence(
+            Box::new(GclCommand::Assignment(GclAssignment {
+                name: format!("_var_has_value__{}", self.name),
+                pred: GclPredicate::Bool(true),
+            })),
+            Box::new(GclCommand::Assignment(GclAssignment {
+                name: self.name.clone(),
+                pred: self.value.to_gcl(),
+            })),
+        )
     }
 }
 

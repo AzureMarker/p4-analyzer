@@ -62,6 +62,7 @@ pub struct BlockStatement(pub Vec<StatementOrDecl>);
 pub enum Statement {
     Block(BlockStatement),
     If(IfStatement),
+    Assignment(Assignment),
     // actions, tables, apply block
 }
 
@@ -84,7 +85,13 @@ pub struct VariableDecl {
 pub struct ConstantDecl {
     pub ty: TypeRef,
     pub name: String,
-    pub initializer: Expr,
+    pub value: Expr,
+}
+
+#[derive(Debug)]
+pub struct Assignment {
+    pub name: String,
+    pub value: Expr,
 }
 
 #[derive(Debug)]

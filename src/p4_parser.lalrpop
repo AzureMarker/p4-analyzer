@@ -29,7 +29,8 @@ Param: Param = <direction:Direction> <ty:TypeRef> <name:Identifier>
 
 Statement: Statement = {
     BlockStatement => Statement::Block(<>),
-    IfStatement => Statement::If(<>)
+    IfStatement => Statement::If(<>),
+    Assignment => Statement::Assignment(<>)
 };
 
 StatementOrDecl: StatementOrDecl = {
@@ -47,8 +48,11 @@ VariableDecl: VariableDecl = {
     <ty:TypeRef> <name:Identifier> <value:("=" <Expr>)?> ";" => VariableDecl { ty, name, value },
 };
 
-ConstantDecl: ConstantDecl = "const" <ty:TypeRef> <name:Identifier> "=" <initializer:Expr> ";"
-    => ConstantDecl { ty, name, initializer };
+ConstantDecl: ConstantDecl = "const" <ty:TypeRef> <name:Identifier> "=" <value:Expr> ";"
+    => ConstantDecl { ty, name, value };
+
+Assignment: Assignment = <name:Identifier> "=" <value:Expr> ";"
+    => Assignment { name, value };
 
 IfStatement: IfStatement = {
     // To avoid ambiguity, only allow block statements in then/else
