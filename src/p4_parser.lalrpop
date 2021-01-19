@@ -103,3 +103,16 @@ Comma<T>: Vec<T> = {
        v
    }
 };
+
+match {
+    // Ignore comments
+    r"//[^\n]*" => { },
+    // Taken from https://stackoverflow.com/a/46220379
+    r"/\*/*(?:(?:\**[^*/]+/*)*)\*+/" => { },
+
+    // Ignore whitespace
+    r"\s" => { },
+
+    // Catch-all for the rest of the terminals
+    _
+}
