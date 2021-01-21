@@ -5,85 +5,109 @@ use crate::ast::{
     Declaration, Expr, IfStatement, Instantiation, Program, Statement, StatementOrDecl,
     VariableDecl,
 };
-use crate::gcl::{GclAssignment, GclCommand, GclPredicate};
-use std::collections::HashMap;
-
-/// A "no operation" command in GCL
-const GCL_NO_OP: GclCommand = GclCommand::Assumption(GclPredicate::Bool(true));
+use crate::gcl::{Flatten, GclAssignment, GclCommand, GclGraph, GclJump, GclNode, GclPredicate};
+use either::Either;
 
 /// Trait for converting a P4 AST node into GCL
 pub trait ToGcl {
     type Output;
 
-    fn to_gcl(&self) -> Self::Output;
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output;
 }
 
 impl ToGcl for Program {
-    type Output = HashMap<String, GclCommand>;
+    type Output = ();
 
-    fn to_gcl(&self) -> Self::Output {
-        self.declarations
-            .iter()
-            .flat_map(Declaration::to_gcl)
-            .collect()
-    }
-}
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+        let mut commands = Vec::new();
 
-impl ToGcl for Declaration {
-    type Output = Vec<(String, GclCommand)>;
-
-    fn to_gcl(&self) -> Self::Output {
-        match self {
-            Declaration::Control(control) => control.to_gcl(),
-            Declaration::Constant(const_decl) => {
-                vec![(const_decl.name.clone(), const_decl.to_gcl())]
+        for decl in &self.declarations {
+            match decl {
+                Declaration::Constant(const_decl) => commands.push(const_decl.to_gcl(graph)),
+                // The nodes are added to the graph automatically
+                Declaration::Control(control) => {
+                    control.to_gcl(graph);
+                }
             }
         }
+
+        let start_node = GclNode {
+            pre_condition: GclPredicate::default(), // todo
+            command: commands.flatten(),
+        };
+        graph.nodes.insert("start".to_string(), start_node);
+
+        // TODO: Parse the main decl and create driver GCL
+
+        // self.declarations
+        //     .iter()
+        //     .flat_map(Declaration::to_gcl)
+        //     .collect()
     }
 }
 
-impl ToGcl for ControlDecl {
-    type Output = Vec<(String, GclCommand)>;
+// impl ToGcl for Declaration {
+//     type Output = Either<GclCommand, (String, String)>;
+//
+//     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+//         match self {
+//             Declaration::Control(control) => Either::Right(control.to_gcl(graph)),
+//             Declaration::Constant(const_decl) => Either::Left(const_decl.to_gcl(graph)),
+//         }
+//     }
+// }
 
-    fn to_gcl(&self) -> Self::Output {
-        let mut top_level_commands = Vec::new();
-        let mut local_commands = None;
+impl ToGcl for ControlDecl {
+    type Output = (String, String);
+
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+        let mut block_stmt = BlockStatement(Vec::new());
 
         // Collect all of the top level local declarations (e.g. actions) and
         // local declarations (e.g. variables).
         for local_decl in &self.local_decls {
-            let (name, command) = local_decl.to_gcl();
-
-            if let Some(name) = name {
-                // This decl has a name, it is top-level
-                top_level_commands.push((format!("{}__{}", self.name, name), command));
-            } else if let Some(local_command_inner) = local_commands {
-                local_commands = Some(GclCommand::Sequence(
-                    Box::new(local_command_inner),
-                    Box::new(command),
-                ));
-            } else {
-                local_commands = Some(command);
+            match local_decl {
+                ControlLocalDecl::Variable(var_decl) => {
+                    block_stmt
+                        .0
+                        .push(StatementOrDecl::VariableDecl(var_decl.clone()));
+                }
+                ControlLocalDecl::Instantiation(instantiation) => block_stmt
+                    .0
+                    .push(StatementOrDecl::Instantiation(instantiation.clone())),
+                ControlLocalDecl::Constant(const_decl) => block_stmt
+                    .0
+                    .push(StatementOrDecl::ConstantDecl(const_decl.clone())),
+                ControlLocalDecl::Action(action_decl) => {
+                    // The nodes will be placed into the graph
+                    action_decl.to_gcl(graph);
+                }
             }
         }
 
-        // Include this control decl in the top-level commands
-        top_level_commands.push((
-            self.name.clone(),
-            GclCommand::Sequence(
-                Box::new(local_commands.unwrap_or(GCL_NO_OP)),
-                Box::new(self.apply_body.to_gcl()),
-            ),
-        ));
+        // Add in statements from the apply block
+        block_stmt.0.extend_from_slice(&self.apply_body.0);
 
-        top_level_commands
+        // Create the block node
+        let (block_start, block_end) = block_stmt.to_gcl(graph);
+
+        // Create the control node
+        let node_name = format!("__control__{}", self.name);
+        let node = GclNode {
+            pre_condition: GclPredicate::default(), // todo
+            command: GclCommand::Jump(GclJump::Direct {
+                next_node: block_start,
+            }),
+        };
+
+        (node_name, block_end)
     }
 }
 
 impl ToGcl for ConstantDecl {
     type Output = GclCommand;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         GclCommand::Sequence(
             Box::new(GclCommand::Assignment(GclAssignment {
                 name: format!("_var_has_value__{}", self.name),
@@ -91,7 +115,7 @@ impl ToGcl for ConstantDecl {
             })),
             Box::new(GclCommand::Assignment(GclAssignment {
                 name: self.name.clone(),
-                pred: self.value.to_gcl(),
+                pred: self.value.to_gcl(graph),
             })),
         )
     }
@@ -100,75 +124,163 @@ impl ToGcl for ConstantDecl {
 impl<T: ToGcl<Output = GclCommand>> ToGcl for [T] {
     type Output = GclCommand;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self.split_first() {
-            Some((head, [])) => head.to_gcl(),
+            Some((head, [])) => head.to_gcl(graph),
             Some((head, tail)) => {
-                GclCommand::Sequence(Box::new(head.to_gcl()), Box::new(tail.to_gcl()))
+                GclCommand::Sequence(Box::new(head.to_gcl(graph)), Box::new(tail.to_gcl(graph)))
             }
-            None => GCL_NO_OP,
+            None => GclCommand::default(),
         }
     }
 }
 
 impl ToGcl for ControlLocalDecl {
-    type Output = (Option<String>, GclCommand);
+    type Output = Either<GclCommand, (String, String)>;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
-            ControlLocalDecl::Variable(var_decl) => (None, var_decl.to_gcl()),
-            ControlLocalDecl::Instantiation(instantiation) => (None, instantiation.to_gcl()),
-            ControlLocalDecl::Constant(const_decl) => (None, const_decl.to_gcl()),
-            ControlLocalDecl::Action(action_decl) => {
-                let (name, command) = action_decl.to_gcl();
-                (Some(name), command)
+            ControlLocalDecl::Variable(var_decl) => Either::Left(var_decl.to_gcl(graph)),
+            ControlLocalDecl::Instantiation(instantiation) => {
+                Either::Left(instantiation.to_gcl(graph))
             }
+            ControlLocalDecl::Constant(const_decl) => Either::Left(const_decl.to_gcl(graph)),
+            ControlLocalDecl::Action(action_decl) => Either::Right(action_decl.to_gcl(graph)),
         }
     }
 }
 
 impl ToGcl for ActionDecl {
-    type Output = (String, GclCommand);
+    type Output = (String, String);
 
-    fn to_gcl(&self) -> Self::Output {
-        (self.name.clone(), self.body.to_gcl())
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+        let (body_start, body_end) = self.body.to_gcl(graph);
+        let start_name = format!("__action__{}", self.name);
+        let end_name = format!("__action_end__{}", self.name);
+        graph.set_node_jump(&body_end, end_name.clone());
+
+        graph.nodes.insert(
+            start_name.clone(),
+            GclNode {
+                pre_condition: GclPredicate::default(),
+                command: GclCommand::Jump(GclJump::Direct {
+                    next_node: body_start,
+                }),
+            },
+        );
+        graph.nodes.insert(
+            end_name.clone(),
+            GclNode {
+                pre_condition: GclPredicate::default(),
+                command: GclCommand::Jump(GclJump::Pop),
+            },
+        );
+
+        (start_name, end_name)
     }
 }
 
 impl ToGcl for BlockStatement {
-    type Output = GclCommand;
+    type Output = (String, String);
 
-    fn to_gcl(&self) -> Self::Output {
-        let mut iterator = self.0.iter().map(StatementOrDecl::to_gcl).rev();
-        let last = iterator.next().unwrap_or(GCL_NO_OP);
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+        let mut current_commands: Vec<GclCommand> = Vec::new();
+        let mut block_start_end: Option<(String, String)> = None;
 
-        iterator.fold(last, |acc, next| {
-            GclCommand::Sequence(Box::new(next), Box::new(acc))
+        fn create_node_from_commands(
+            current_commands: &mut Vec<GclCommand>,
+            graph: &mut GclGraph,
+            block_start_end: &mut Option<(String, String)>,
+        ) {
+            let command = std::mem::take(current_commands).flatten();
+            let node_name = graph.create_name("block_stmt_body");
+
+            if let Some((_block_start, block_end)) = block_start_end {
+                graph.set_node_jump(block_end, node_name.clone());
+            } else {
+                *block_start_end = Some((node_name.clone(), node_name.clone()));
+            }
+
+            graph.nodes.insert(
+                node_name,
+                GclNode {
+                    pre_condition: GclPredicate::default(), // todo
+                    command,
+                },
+            );
+        };
+
+        // Expand each statement and collect all of the nodes (e.g. from if
+        // statements) and simple commands (e.g. variable declarations).
+        for statement_or_decl in &self.0 {
+            match statement_or_decl.to_gcl(graph) {
+                Either::Left(command) => {
+                    current_commands.push(command);
+                }
+                Either::Right((start_node, end_node)) => {
+                    if !current_commands.is_empty() {
+                        create_node_from_commands(
+                            &mut current_commands,
+                            graph,
+                            &mut block_start_end,
+                        );
+                    }
+
+                    if let Some((_block_start, block_end)) = &block_start_end {
+                        graph.set_node_jump(block_end, start_node);
+                    } else {
+                        block_start_end = Some((start_node, end_node));
+                    }
+                }
+            }
+        }
+
+        if !current_commands.is_empty() {
+            create_node_from_commands(&mut current_commands, graph, &mut block_start_end);
+        }
+
+        block_start_end.unwrap_or_else(|| {
+            // Empty block
+            let node_name = graph.create_name("block_stmt_body");
+            graph.nodes.insert(
+                node_name.clone(),
+                GclNode {
+                    pre_condition: GclPredicate::default(),
+                    command: GclCommand::default(),
+                },
+            );
+
+            (node_name.clone(), node_name)
         })
     }
 }
 
 impl ToGcl for StatementOrDecl {
-    type Output = GclCommand;
+    type Output = Either<GclCommand, (String, String)>;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
-            StatementOrDecl::Statement(statement) => statement.to_gcl(),
-            StatementOrDecl::VariableDecl(var_decl) => var_decl.to_gcl(),
-            StatementOrDecl::ConstantDecl(const_decl) => const_decl.to_gcl(),
-            StatementOrDecl::Instantiation(instantiation) => instantiation.to_gcl(),
+            StatementOrDecl::Statement(statement) => statement.to_gcl(graph),
+            StatementOrDecl::VariableDecl(var_decl) => Either::Left(var_decl.to_gcl(graph)),
+            StatementOrDecl::ConstantDecl(const_decl) => Either::Left(const_decl.to_gcl(graph)),
+            StatementOrDecl::Instantiation(instantiation) => {
+                Either::Left(instantiation.to_gcl(graph))
+            }
         }
     }
 }
 
 impl ToGcl for Statement {
-    type Output = GclCommand;
+    /// A statement either expands to a straightforward command or a set of
+    /// nodes. If it's a node, the start and end node names are returned (may be
+    /// equal if only one node).
+    type Output = Either<GclCommand, (String, String)>;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
-            Statement::Block(block) => block.to_gcl(),
-            Statement::If(if_statement) => if_statement.to_gcl(),
-            Statement::Assignment(assignment) => assignment.to_gcl(),
+            Statement::Block(block) => Either::Right(block.to_gcl(graph)),
+            Statement::If(if_statement) => Either::Right(if_statement.to_gcl(graph)),
+            Statement::Assignment(assignment) => Either::Left(assignment.to_gcl(graph)),
         }
     }
 }
@@ -176,7 +288,7 @@ impl ToGcl for Statement {
 impl ToGcl for VariableDecl {
     type Output = GclCommand;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let has_value_command = GclCommand::Assignment(GclAssignment {
             name: format!("_var_has_value__{}", self.name),
             pred: GclPredicate::Bool(self.value.is_some()),
@@ -187,7 +299,7 @@ impl ToGcl for VariableDecl {
                 Box::new(has_value_command),
                 Box::new(GclCommand::Assignment(GclAssignment {
                     name: self.name.clone(),
-                    pred: value.to_gcl(),
+                    pred: value.to_gcl(graph),
                 })),
             ),
             None => has_value_command,
@@ -198,7 +310,7 @@ impl ToGcl for VariableDecl {
 impl ToGcl for Instantiation {
     type Output = GclCommand;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, _graph: &mut GclGraph) -> Self::Output {
         GclCommand::Assignment(GclAssignment {
             name: format!("_var_has_value__{}", self.name),
             pred: GclPredicate::Bool(true),
@@ -209,7 +321,7 @@ impl ToGcl for Instantiation {
 impl ToGcl for Assignment {
     type Output = GclCommand;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         GclCommand::Sequence(
             Box::new(GclCommand::Assignment(GclAssignment {
                 name: format!("_var_has_value__{}", self.name),
@@ -217,70 +329,131 @@ impl ToGcl for Assignment {
             })),
             Box::new(GclCommand::Assignment(GclAssignment {
                 name: self.name.clone(),
-                pred: self.value.to_gcl(),
+                pred: self.value.to_gcl(graph),
             })),
         )
     }
 }
 
 impl ToGcl for IfStatement {
-    type Output = GclCommand;
+    /// The start and end node names
+    type Output = (String, String);
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         // Make sure that all the variables read by this conditional have a value
         let vars = self.condition.find_all_vars();
-        let mut var_value_check_iter = vars
+        let var_predicates: Vec<_> = vars
             .into_iter()
-            .map(|var| GclCommand::Assert(GclPredicate::Var(format!("_var_has_value__{}", var))));
-        let var_value_check_first = var_value_check_iter.next().unwrap_or(GCL_NO_OP);
-        let var_value_check_gcl = var_value_check_iter.rfold(var_value_check_first, |acc, next| {
-            GclCommand::Sequence(Box::new(next), Box::new(acc))
-        });
+            .map(|var| GclPredicate::Var(format!("_var_has_value__{}", var)))
+            .collect();
+        let var_value_check_gcl = var_predicates.flatten();
 
-        let pred = self.condition.to_gcl();
+        let jump_node_name = graph.create_name("if_jump");
+        let end_node_name = graph.create_name("if_end");
+
+        let pred = self.condition.to_gcl(graph);
         let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
-        let then_case_gcl = self.then_case.to_gcl();
-        let else_case_gcl = self
-            .else_case
-            .as_ref()
-            .map(BlockStatement::to_gcl)
-            .unwrap_or(GCL_NO_OP);
+        let (then_node_start, then_node_end) = self.then_case.to_gcl(graph);
+        let else_node_names = self.else_case.as_ref().map(|stmt| stmt.to_gcl(graph));
 
-        // A choice of two branches.
-        // The "then" branch assumes the conditional, while the "else"
-        // branch assumes the negated conditional.
-        // TODO: is this the correct translation of an "if" into p4v's
-        //       version of GCL?
-        GclCommand::Sequence(
-            Box::new(var_value_check_gcl),
-            Box::new(GclCommand::Choice(
+        let jump_node = GclNode {
+            pre_condition: var_value_check_gcl,
+            command: GclCommand::Choice(
                 Box::new(GclCommand::Sequence(
                     Box::new(GclCommand::Assumption(pred)),
-                    Box::new(then_case_gcl),
+                    Box::new(GclCommand::Jump(GclJump::Direct {
+                        next_node: then_node_start,
+                    })),
                 )),
                 Box::new(GclCommand::Sequence(
                     Box::new(GclCommand::Assumption(negated_pred)),
-                    Box::new(else_case_gcl),
+                    Box::new(GclCommand::Jump(GclJump::Direct {
+                        next_node: if let Some((else_node_start, _)) = &else_node_names {
+                            else_node_start.clone()
+                        } else {
+                            end_node_name.clone()
+                        },
+                    })),
                 )),
-            )),
-        )
+            ),
+        };
+
+        graph.set_node_jump(&then_node_end, end_node_name.clone());
+        if let Some((_, else_node_end)) = &else_node_names {
+            graph.set_node_jump(&else_node_end, end_node_name.clone());
+        }
+
+        // let then_node = GclNode {
+        //     pre_condition: GclPredicate::default(), // todo
+        //     post_condition: GclPredicate::default(),
+        //     command: GclCommand::Sequence(
+        //         Box::new(then_case_gcl),
+        //         Box::new(GclCommand::Jump(GclJump::Direct {
+        //             next_node: end_node_name.clone(),
+        //         })),
+        //     ),
+        // };
+        // let else_node = GclNode {
+        //     pre_condition: GclPredicate::default(), // todo
+        //     command: GclCommand::Sequence(
+        //         Box::new(else_case_gcl),
+        //         Box::new(GclCommand::Jump(GclJump {
+        //             kind: GclJumpKind::Direct {
+        //                 next_node: end_node_name.clone(),
+        //             },
+        //             post_condition: GclPredicate::default(), // todo
+        //         })),
+        //     ),
+        // };
+        let end_node = GclNode {
+            pre_condition: GclPredicate::default(),
+            command: GclCommand::default(), // TODO: this should link up later to the next node
+        };
+
+        graph.nodes.insert(jump_node_name.clone(), jump_node);
+        // graph.nodes.insert(then_node_name, then_node);
+        // graph.nodes.insert(else_node_name, else_node);
+        graph.nodes.insert(end_node_name.clone(), end_node);
+
+        (jump_node_name, end_node_name)
+
+        // // A choice of two branches.
+        // // The "then" branch assumes the conditional, while the "else"
+        // // branch assumes the negated conditional.
+        // // TODO: is this the correct translation of an "if" into p4v's
+        // //       version of GCL?
+        // GclCommand::Sequence(
+        //     Box::new(var_value_check_gcl),
+        //     Box::new(GclCommand::Choice(
+        //         Box::new(GclCommand::Sequence(
+        //             Box::new(GclCommand::Assumption(pred)),
+        //             Box::new(then_case_gcl),
+        //         )),
+        //         Box::new(GclCommand::Sequence(
+        //             Box::new(GclCommand::Assumption(negated_pred)),
+        //             Box::new(else_case_gcl),
+        //         )),
+        //     )),
+        // )
     }
 }
 
 impl ToGcl for Expr {
     type Output = GclPredicate;
 
-    fn to_gcl(&self) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
             Expr::Bool(b) => GclPredicate::Bool(*b),
             Expr::Var(name) => GclPredicate::Var(name.clone()),
-            Expr::And(left, right) => {
-                GclPredicate::Conjunction(Box::new(left.to_gcl()), Box::new(right.to_gcl()))
-            }
-            Expr::Or(left, right) => {
-                GclPredicate::Disjunction(Box::new(left.to_gcl()), Box::new(right.to_gcl()))
-            }
-            Expr::Negation(inner) => GclPredicate::Negation(Box::new(inner.to_gcl())),
+            Expr::And(left, right) => GclPredicate::Conjunction(
+                Box::new(left.to_gcl(graph)),
+                Box::new(right.to_gcl(graph)),
+            ),
+            Expr::Or(left, right) => GclPredicate::Disjunction(
+                Box::new(left.to_gcl(graph)),
+                Box::new(right.to_gcl(graph)),
+            ),
+            Expr::Negation(inner) => GclPredicate::Negation(Box::new(inner.to_gcl(graph))),
         }
     }
 }

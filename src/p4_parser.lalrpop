@@ -30,7 +30,8 @@ Param: Param = <direction:Direction> <ty:TypeRef> <name:Identifier>
 Statement: Statement = {
     BlockStatement => Statement::Block(<>),
     IfStatement => Statement::If(<>),
-    Assignment => Statement::Assignment(<>)
+    Assignment => Statement::Assignment(<>),
+//    MethodCall => Statement::MethodCall(<>)
 };
 
 StatementOrDecl: StatementOrDecl = {
@@ -53,6 +54,9 @@ ConstantDecl: ConstantDecl = "const" <ty:TypeRef> <name:Identifier> "=" <value:E
 
 Assignment: Assignment = <name:Identifier> "=" <value:Expr> ";"
     => Assignment { name, value };
+    
+MethodCall: MethodCall = <name:Identifier> "(" <arguments:Expr*> ")"
+    => MethodCall { name, arguments };
 
 IfStatement: IfStatement = {
     // To avoid ambiguity, only allow block statements in then/else

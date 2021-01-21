@@ -34,7 +34,7 @@ pub struct ActionDecl {
     pub body: BlockStatement,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Instantiation {
     pub ty: TypeRef,
     // todo: arguments
@@ -55,18 +55,19 @@ pub enum Direction {
     InOut,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BlockStatement(pub Vec<StatementOrDecl>);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Statement {
     Block(BlockStatement),
     If(IfStatement),
     Assignment(Assignment),
+    // MethodCall(MethodCall),
     // actions, tables, apply block
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StatementOrDecl {
     Statement(Statement),
     VariableDecl(VariableDecl),
@@ -74,34 +75,40 @@ pub enum StatementOrDecl {
     Instantiation(Instantiation),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VariableDecl {
     pub ty: TypeRef,
     pub name: String,
     pub value: Option<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ConstantDecl {
     pub ty: TypeRef,
     pub name: String,
     pub value: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Assignment {
     pub name: String,
     pub value: Expr,
 }
 
 #[derive(Debug)]
+pub struct MethodCall {
+    pub name: String,
+    pub arguments: Vec<Expr>,
+}
+
+#[derive(Clone, Debug)]
 pub struct IfStatement {
     pub condition: Expr,
     pub then_case: BlockStatement,
     pub else_case: Option<BlockStatement>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Expr {
     Bool(bool),
     Var(String),

@@ -6,6 +6,7 @@ authors = ["Mark Drobnak <mtd8050@rit.edu>"]
 edition = "2018"
 
 [dependencies]
+either = "1.6"
 lalrpop-util = "0.19"
 z3 = "0.9"
 
