@@ -9,6 +9,7 @@ pub struct Program {
 pub enum Declaration {
     Control(ControlDecl),
     Constant(ConstantDecl),
+    Instantiation(Instantiation),
 }
 
 #[derive(Debug)]

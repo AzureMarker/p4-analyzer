@@ -6,7 +6,8 @@ pub Program: Program = Declaration* => Program { declarations: <> };
 
 Declaration: Declaration = {
     ControlDecl => Declaration::Control(<>),
-    ConstantDecl => Declaration::Constant(<>)
+    ConstantDecl => Declaration::Constant(<>),
+    Instantiation => Declaration::Instantiation(<>),
 };
 
 ControlDecl: ControlDecl =

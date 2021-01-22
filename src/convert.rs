@@ -28,6 +28,9 @@ impl ToGcl for Program {
                 Declaration::Control(control) => {
                     control.to_gcl(graph);
                 }
+                Declaration::Instantiation(instantiation) => {
+                    commands.push(instantiation.to_gcl(graph))
+                }
             }
         }
 
