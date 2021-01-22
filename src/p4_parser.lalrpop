@@ -28,6 +28,12 @@ ActionDecl: ActionDecl = "action" <name:Identifier> "(" <params:Comma<Param>> ")
 Param: Param = <direction:Direction> <ty:TypeRef> <name:Identifier>
     => Param { direction, ty, name };
 
+Argument: Argument = {
+    Expr => Argument::Value(<>),
+    <name:Identifier> "=" <value:Expr> => Argument::Named(name, value),
+    "_" => Argument::DontCare
+};
+
 Statement: Statement = {
     BlockStatement => Statement::Block(<>),
     IfStatement => Statement::If(<>),
@@ -44,7 +50,8 @@ StatementOrDecl: StatementOrDecl = {
 
 BlockStatement: BlockStatement = "{" <StatementOrDecl*> "}" => BlockStatement(<>);
 
-Instantiation: Instantiation = <ty:TypeRef> "(" ")" <name:Identifier> ";" => Instantiation { ty, name };
+Instantiation: Instantiation = <ty:TypeRef> "(" <args:Comma<Argument>> ")" <name:Identifier> ";"
+    => Instantiation { ty, args, name };
 
 VariableDecl: VariableDecl = {
     <ty:TypeRef> <name:Identifier> <value:("=" <Expr>)?> ";" => VariableDecl { ty, name, value },
@@ -55,8 +62,8 @@ ConstantDecl: ConstantDecl = "const" <ty:TypeRef> <name:Identifier> "=" <value:E
 
 Assignment: Assignment = <name:Identifier> "=" <value:Expr> ";"
     => Assignment { name, value };
-    
-MethodCall: MethodCall = <name:Identifier> "(" <arguments:Expr*> ")"
+
+MethodCall: MethodCall = <name:Identifier> "(" <arguments:Comma<Argument>> ")"
     => MethodCall { name, arguments };
 
 IfStatement: IfStatement = {

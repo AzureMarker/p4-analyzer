@@ -38,8 +38,15 @@ pub struct ActionDecl {
 #[derive(Clone, Debug)]
 pub struct Instantiation {
     pub ty: TypeRef,
-    // todo: arguments
+    pub args: Vec<Argument>,
     pub name: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum Argument {
+    Value(Expr),
+    Named(String, Expr),
+    DontCare,
 }
 
 #[derive(Debug)]
@@ -99,7 +106,7 @@ pub struct Assignment {
 #[derive(Debug)]
 pub struct MethodCall {
     pub name: String,
-    pub arguments: Vec<Expr>,
+    pub arguments: Vec<Argument>,
 }
 
 #[derive(Clone, Debug)]
