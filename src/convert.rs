@@ -124,7 +124,7 @@ impl ToGcl for ConstantDecl {
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         GclCommand::Sequence(
             Box::new(GclCommand::Assignment(GclAssignment {
-                name: format!("_var_has_value__{}", self.name),
+                name: format!("_has_value__{}", self.name),
                 pred: GclPredicate::Bool(true),
             })),
             Box::new(GclCommand::Assignment(GclAssignment {
@@ -293,7 +293,7 @@ impl ToGcl for StatementOrDecl {
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
-            StatementOrDecl::Statement(statement) => statement.to_gcl(graph),
+            StatementOrDecl::Statement(statement) => Either::Right(statement.to_gcl(graph)),
             StatementOrDecl::VariableDecl(var_decl) => Either::Left(var_decl.to_gcl(graph)),
             StatementOrDecl::ConstantDecl(const_decl) => Either::Left(const_decl.to_gcl(graph)),
             StatementOrDecl::Instantiation(instantiation) => {
@@ -307,13 +307,19 @@ impl ToGcl for Statement {
     /// A statement either expands to a straightforward command or a set of
     /// nodes. If it's a node, the start and end node names are returned (may be
     /// equal if only one node).
-    type Output = Either<GclCommand, GclNodeRange>;
+    type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
-            Statement::Block(block) => Either::Right(block.to_gcl(graph)),
-            Statement::If(if_statement) => Either::Right(if_statement.to_gcl(graph)),
-            Statement::Assignment(assignment) => Either::Left(assignment.to_gcl(graph)),
+            Statement::Block(block) => block.to_gcl(graph),
+            Statement::If(if_statement) => if_statement.to_gcl(graph),
+            Statement::Assignment(assignment) => {
+                let node_name = assignment.to_gcl(graph);
+                GclNodeRange {
+                    start: node_name.clone(),
+                    end: node_name,
+                }
+            }
         }
     }
 }
@@ -322,20 +328,26 @@ impl ToGcl for VariableDecl {
     type Output = GclCommand;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+        let has_decl_command = GclCommand::Assignment(GclAssignment {
+            name: format!("_declared_var__{}", self.name),
+            pred: GclPredicate::Bool(true),
+        });
         let has_value_command = GclCommand::Assignment(GclAssignment {
-            name: format!("_var_has_value__{}", self.name),
+            name: format!("_has_value__{}", self.name),
             pred: GclPredicate::Bool(self.value.is_some()),
         });
+        let ghost_variables =
+            GclCommand::Sequence(Box::new(has_decl_command), Box::new(has_value_command));
 
         match self.value.as_ref() {
             Some(value) => GclCommand::Sequence(
-                Box::new(has_value_command),
+                Box::new(ghost_variables),
                 Box::new(GclCommand::Assignment(GclAssignment {
                     name: self.name.clone(),
                     pred: value.to_gcl(graph),
                 })),
             ),
-            None => has_value_command,
+            None => ghost_variables,
         }
     }
 }
@@ -345,26 +357,36 @@ impl ToGcl for Instantiation {
 
     fn to_gcl(&self, _graph: &mut GclGraph) -> Self::Output {
         GclCommand::Assignment(GclAssignment {
-            name: format!("_var_has_value__{}", self.name),
+            name: format!("_has_value__{}", self.name),
             pred: GclPredicate::Bool(true),
         })
     }
 }
 
 impl ToGcl for Assignment {
-    type Output = GclCommand;
+    /// The GCL node
+    type Output = String;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        GclCommand::Sequence(
-            Box::new(GclCommand::Assignment(GclAssignment {
-                name: format!("_var_has_value__{}", self.name),
-                pred: GclPredicate::Bool(true),
-            })),
-            Box::new(GclCommand::Assignment(GclAssignment {
-                name: self.name.clone(),
-                pred: self.value.to_gcl(graph),
-            })),
-        )
+        let node_name = graph.create_name(&format!("__assignment__{}", self.name));
+        let node = GclNode {
+            pre_condition: GclPredicate::Var(format!("_declared_var__{}", self.name)),
+            command: GclCommand::Sequence(
+                Box::new(GclCommand::Assignment(GclAssignment {
+                    name: format!("_has_value__{}", self.name),
+                    pred: GclPredicate::Bool(true),
+                })),
+                Box::new(GclCommand::Assignment(GclAssignment {
+                    name: self.name.clone(),
+                    pred: self.value.to_gcl(graph),
+                })),
+            ),
+            jump: GclJump::End,
+        };
+
+        graph.nodes.insert(node_name.clone(), node);
+
+        node_name
     }
 }
 
@@ -376,7 +398,7 @@ impl ToGcl for IfStatement {
         let vars = self.condition.find_all_vars();
         let var_predicates: Vec<_> = vars
             .into_iter()
-            .map(|var| GclPredicate::Var(format!("_var_has_value__{}", var)))
+            .map(|var| GclPredicate::Var(format!("_has_value__{}", var)))
             .collect();
         let var_value_check_gcl = var_predicates.flatten();
 
