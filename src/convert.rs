@@ -37,6 +37,7 @@ impl ToGcl for Program {
         let start_node = GclNode {
             pre_condition: GclPredicate::default(), // todo
             command: commands.flatten(),
+            jump: GclJump::End,
         };
         graph.nodes.insert("start".to_string(), start_node);
 
@@ -98,10 +99,12 @@ impl ToGcl for ControlDecl {
         let node_name = format!("__control__{}", self.name);
         let node = GclNode {
             pre_condition: GclPredicate::default(), // todo
-            command: GclCommand::Jump(GclJump::Direct {
+            command: GclCommand::default(),
+            jump: GclJump::Direct {
                 next_node: block_start,
-            }),
+            },
         };
+        graph.nodes.insert(node_name.clone(), node);
 
         (node_name, block_end)
     }
@@ -166,16 +169,18 @@ impl ToGcl for ActionDecl {
             start_name.clone(),
             GclNode {
                 pre_condition: GclPredicate::default(),
-                command: GclCommand::Jump(GclJump::Direct {
+                command: GclCommand::default(),
+                jump: GclJump::Direct {
                     next_node: body_start,
-                }),
+                },
             },
         );
         graph.nodes.insert(
             end_name.clone(),
             GclNode {
                 pre_condition: GclPredicate::default(),
-                command: GclCommand::Jump(GclJump::Pop),
+                command: GclCommand::default(),
+                jump: GclJump::Pop,
             },
         );
 
@@ -209,6 +214,7 @@ impl ToGcl for BlockStatement {
                 GclNode {
                     pre_condition: GclPredicate::default(), // todo
                     command,
+                    jump: GclJump::End,
                 },
             );
         };
@@ -250,6 +256,7 @@ impl ToGcl for BlockStatement {
                 GclNode {
                     pre_condition: GclPredicate::default(),
                     command: GclCommand::default(),
+                    jump: GclJump::End,
                 },
             );
 
@@ -358,86 +365,35 @@ impl ToGcl for IfStatement {
         let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
         let (then_node_start, then_node_end) = self.then_case.to_gcl(graph);
         let else_node_names = self.else_case.as_ref().map(|stmt| stmt.to_gcl(graph));
+        let else_node_name = if let Some((else_node_start, _)) = &else_node_names {
+            else_node_start.clone()
+        } else {
+            end_node_name.clone()
+        };
 
         let jump_node = GclNode {
             pre_condition: var_value_check_gcl,
-            command: GclCommand::Choice(
-                Box::new(GclCommand::Sequence(
-                    Box::new(GclCommand::Assumption(pred)),
-                    Box::new(GclCommand::Jump(GclJump::Direct {
-                        next_node: then_node_start,
-                    })),
-                )),
-                Box::new(GclCommand::Sequence(
-                    Box::new(GclCommand::Assumption(negated_pred)),
-                    Box::new(GclCommand::Jump(GclJump::Direct {
-                        next_node: if let Some((else_node_start, _)) = &else_node_names {
-                            else_node_start.clone()
-                        } else {
-                            end_node_name.clone()
-                        },
-                    })),
-                )),
-            ),
+            command: GclCommand::default(),
+            jump: GclJump::Conditional {
+                nodes: vec![(pred, then_node_start), (negated_pred, else_node_name)],
+            },
         };
 
         graph.set_node_jump(&then_node_end, end_node_name.clone());
         if let Some((_, else_node_end)) = &else_node_names {
-            graph.set_node_jump(&else_node_end, end_node_name.clone());
+            graph.set_node_jump(else_node_end, end_node_name.clone());
         }
 
-        // let then_node = GclNode {
-        //     pre_condition: GclPredicate::default(), // todo
-        //     post_condition: GclPredicate::default(),
-        //     command: GclCommand::Sequence(
-        //         Box::new(then_case_gcl),
-        //         Box::new(GclCommand::Jump(GclJump::Direct {
-        //             next_node: end_node_name.clone(),
-        //         })),
-        //     ),
-        // };
-        // let else_node = GclNode {
-        //     pre_condition: GclPredicate::default(), // todo
-        //     command: GclCommand::Sequence(
-        //         Box::new(else_case_gcl),
-        //         Box::new(GclCommand::Jump(GclJump {
-        //             kind: GclJumpKind::Direct {
-        //                 next_node: end_node_name.clone(),
-        //             },
-        //             post_condition: GclPredicate::default(), // todo
-        //         })),
-        //     ),
-        // };
         let end_node = GclNode {
             pre_condition: GclPredicate::default(),
-            command: GclCommand::default(), // TODO: this should link up later to the next node
+            command: GclCommand::default(),
+            jump: GclJump::End,
         };
 
         graph.nodes.insert(jump_node_name.clone(), jump_node);
-        // graph.nodes.insert(then_node_name, then_node);
-        // graph.nodes.insert(else_node_name, else_node);
         graph.nodes.insert(end_node_name.clone(), end_node);
 
         (jump_node_name, end_node_name)
-
-        // // A choice of two branches.
-        // // The "then" branch assumes the conditional, while the "else"
-        // // branch assumes the negated conditional.
-        // // TODO: is this the correct translation of an "if" into p4v's
-        // //       version of GCL?
-        // GclCommand::Sequence(
-        //     Box::new(var_value_check_gcl),
-        //     Box::new(GclCommand::Choice(
-        //         Box::new(GclCommand::Sequence(
-        //             Box::new(GclCommand::Assumption(pred)),
-        //             Box::new(then_case_gcl),
-        //         )),
-        //         Box::new(GclCommand::Sequence(
-        //             Box::new(GclCommand::Assumption(negated_pred)),
-        //             Box::new(else_case_gcl),
-        //         )),
-        //     )),
-        // )
     }
 }
 

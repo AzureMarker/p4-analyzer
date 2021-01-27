@@ -24,16 +24,12 @@ impl GclGraph {
         name
     }
 
-    /// Add a command to the end of the node to jump directly to the given
-    /// node. This only works if the node does not already have a jump command.
+    /// Update the node to jump directly to the new jump node, replacing any
+    /// previous jump behavior.
     pub fn set_node_jump(&mut self, node_name: &str, new_jump: String) {
-        let node = self.nodes.get_mut(node_name).unwrap();
-        node.command = GclCommand::Sequence(
-            Box::new(node.command.clone()),
-            Box::new(GclCommand::Jump(GclJump::Direct {
-                next_node: new_jump,
-            })),
-        );
+        self.nodes.get_mut(node_name).unwrap().jump = GclJump::Direct {
+            next_node: new_jump,
+        };
     }
 }
 
@@ -46,8 +42,8 @@ impl Display for GclGraph {
         for (name, node) in nodes {
             writeln!(
                 f,
-                "Node '{}'\n  pre_condition = {}\n  command = {}",
-                name, node.pre_condition, node.command
+                "Node '{}'\n  pre_condition = {}\n  command = {}\n  jump = {}",
+                name, node.pre_condition, node.command, node.jump
             )?;
         }
 
@@ -59,18 +55,8 @@ impl Display for GclGraph {
 pub struct GclNode {
     pub pre_condition: GclPredicate,
     pub command: GclCommand,
+    pub jump: GclJump,
 }
-
-// #[derive(Clone, Debug)]
-// pub struct GclJump {
-//     pub kind: GclJumpKind,
-// }
-//
-// impl Display for GclJump {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-//         write!(f, "{}", self.kind)
-//     }
-// }
 
 #[derive(Clone, Debug)]
 pub enum GclJump {
@@ -83,7 +69,12 @@ pub enum GclJump {
     Pop,
     /// Jump directly to a node
     Direct { next_node: String },
-    /// Stop execution (only used in the end node)
+    /// Choose the first node to jump to whose predicate is true
+    Conditional {
+        /// A predicate plus a node name
+        nodes: Vec<(GclPredicate, String)>,
+    },
+    /// Stop execution (only used in the end node or as a temporary jump value)
     End,
 }
 
@@ -98,6 +89,15 @@ impl Display for GclJump {
             }
             GclJump::Pop => write!(f, "pop()"),
             GclJump::Direct { next_node } => write!(f, "direct({})", next_node),
+            GclJump::Conditional { nodes } => write!(
+                f,
+                "conditional({})",
+                nodes
+                    .iter()
+                    .map(|(pred, node)| format!("({}, {})", pred, node))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             GclJump::End => write!(f, "end()"),
         }
     }
@@ -110,7 +110,6 @@ pub enum GclCommand {
     Choice(Box<GclCommand>, Box<GclCommand>),
     Assumption(GclPredicate),
     Assert(GclPredicate),
-    Jump(GclJump),
 }
 
 impl Display for GclCommand {
@@ -121,7 +120,6 @@ impl Display for GclCommand {
             GclCommand::Choice(cmd1, cmd2) => write!(f, "({}) [] ({})", cmd1, cmd2),
             GclCommand::Assumption(pred) => write!(f, "assume({})", pred),
             GclCommand::Assert(pred) => write!(f, "assert({})", pred),
-            GclCommand::Jump(jump) => write!(f, "jump({})", jump),
         }
     }
 }

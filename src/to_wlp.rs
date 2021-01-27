@@ -20,7 +20,6 @@ impl GclCommand {
             GclCommand::Assert(pred) => {
                 GclPredicate::Conjunction(Box::new(pred.clone()), Box::new(post_condition))
             }
-            GclCommand::Jump(_) => GclPredicate::Bool(true), // fixme
         }
     }
 }
