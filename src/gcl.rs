@@ -41,7 +41,9 @@ impl Display for GclGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "Graph ({} nodes):", self.nodes.len())?;
 
-        for (name, node) in &self.nodes {
+        let mut nodes: Vec<_> = self.nodes.iter().collect();
+        nodes.sort_by_key(|(name, _)| name.as_str());
+        for (name, node) in nodes {
             writeln!(
                 f,
                 "Node '{}'\n  pre_condition = {}\n  command = {}",
