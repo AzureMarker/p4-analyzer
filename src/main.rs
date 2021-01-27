@@ -31,7 +31,7 @@ fn main() {
 
     // Convert to GCL
     let mut graph = GclGraph::new();
-    let gcl_programs = p4_program.to_gcl(&mut graph);
+    let gcl_start_node = p4_program.to_gcl(&mut graph);
     println!("{}", graph);
 
     // Check program

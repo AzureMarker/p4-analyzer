@@ -5,7 +5,9 @@ use crate::ast::{
     Declaration, Expr, IfStatement, Instantiation, Program, Statement, StatementOrDecl,
     VariableDecl,
 };
-use crate::gcl::{Flatten, GclAssignment, GclCommand, GclGraph, GclJump, GclNode, GclPredicate};
+use crate::gcl::{
+    Flatten, GclAssignment, GclCommand, GclGraph, GclJump, GclNode, GclNodeRange, GclPredicate,
+};
 use either::Either;
 
 /// Trait for converting a P4 AST node into GCL
@@ -16,7 +18,8 @@ pub trait ToGcl {
 }
 
 impl ToGcl for Program {
-    type Output = ();
+    /// The starting node
+    type Output = String;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let mut commands = Vec::new();
@@ -41,6 +44,8 @@ impl ToGcl for Program {
         };
         graph.nodes.insert("start".to_string(), start_node);
 
+        "start".to_string()
+
         // TODO: Parse the main decl and create driver GCL
 
         // self.declarations
@@ -62,7 +67,7 @@ impl ToGcl for Program {
 // }
 
 impl ToGcl for ControlDecl {
-    type Output = (String, String);
+    type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let mut block_stmt = BlockStatement(Vec::new());
@@ -93,7 +98,7 @@ impl ToGcl for ControlDecl {
         block_stmt.0.extend_from_slice(&self.apply_body.0);
 
         // Create the block node
-        let (block_start, block_end) = block_stmt.to_gcl(graph);
+        let block_range = block_stmt.to_gcl(graph);
 
         // Create the control node
         let node_name = format!("__control__{}", self.name);
@@ -101,12 +106,15 @@ impl ToGcl for ControlDecl {
             pre_condition: GclPredicate::default(), // todo
             command: GclCommand::default(),
             jump: GclJump::Direct {
-                next_node: block_start,
+                next_node: block_range.start,
             },
         };
         graph.nodes.insert(node_name.clone(), node);
 
-        (node_name, block_end)
+        GclNodeRange {
+            start: node_name,
+            end: block_range.end,
+        }
     }
 }
 
@@ -142,7 +150,7 @@ impl<T: ToGcl<Output = GclCommand>> ToGcl for [T] {
 }
 
 impl ToGcl for ControlLocalDecl {
-    type Output = Either<GclCommand, (String, String)>;
+    type Output = Either<GclCommand, GclNodeRange>;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
@@ -157,13 +165,13 @@ impl ToGcl for ControlLocalDecl {
 }
 
 impl ToGcl for ActionDecl {
-    type Output = (String, String);
+    type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        let (body_start, body_end) = self.body.to_gcl(graph);
+        let body_range = self.body.to_gcl(graph);
         let start_name = format!("__action__{}", self.name);
         let end_name = format!("__action_end__{}", self.name);
-        graph.set_node_jump(&body_end, end_name.clone());
+        graph.set_node_jump(&body_range.end, end_name.clone());
 
         graph.nodes.insert(
             start_name.clone(),
@@ -171,7 +179,7 @@ impl ToGcl for ActionDecl {
                 pre_condition: GclPredicate::default(),
                 command: GclCommand::default(),
                 jump: GclJump::Direct {
-                    next_node: body_start,
+                    next_node: body_range.start,
                 },
             },
         );
@@ -184,29 +192,35 @@ impl ToGcl for ActionDecl {
             },
         );
 
-        (start_name, end_name)
+        GclNodeRange {
+            start: start_name,
+            end: end_name,
+        }
     }
 }
 
 impl ToGcl for BlockStatement {
-    type Output = (String, String);
+    type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let mut current_commands: Vec<GclCommand> = Vec::new();
-        let mut block_start_end: Option<(String, String)> = None;
+        let mut block_start_end: Option<GclNodeRange> = None;
 
         fn create_node_from_commands(
             current_commands: &mut Vec<GclCommand>,
             graph: &mut GclGraph,
-            block_start_end: &mut Option<(String, String)>,
+            block_start_end: &mut Option<GclNodeRange>,
         ) {
             let command = std::mem::take(current_commands).flatten();
             let node_name = graph.create_name("block_stmt_body");
 
-            if let Some((_block_start, block_end)) = block_start_end {
-                graph.set_node_jump(block_end, node_name.clone());
+            if let Some(range) = block_start_end {
+                graph.set_node_jump(&range.end, node_name.clone());
             } else {
-                *block_start_end = Some((node_name.clone(), node_name.clone()));
+                *block_start_end = Some(GclNodeRange {
+                    start: node_name.clone(),
+                    end: node_name.clone(),
+                });
             }
 
             graph.nodes.insert(
@@ -226,7 +240,10 @@ impl ToGcl for BlockStatement {
                 Either::Left(command) => {
                     current_commands.push(command);
                 }
-                Either::Right((start_node, end_node)) => {
+                Either::Right(GclNodeRange {
+                    start: start_node,
+                    end: end_node,
+                }) => {
                     if !current_commands.is_empty() {
                         create_node_from_commands(
                             &mut current_commands,
@@ -235,10 +252,13 @@ impl ToGcl for BlockStatement {
                         );
                     }
 
-                    if let Some((_block_start, block_end)) = &block_start_end {
-                        graph.set_node_jump(block_end, start_node);
+                    if let Some(range) = &block_start_end {
+                        graph.set_node_jump(&range.end, start_node);
                     } else {
-                        block_start_end = Some((start_node, end_node));
+                        block_start_end = Some(GclNodeRange {
+                            start: start_node,
+                            end: end_node,
+                        });
                     }
                 }
             }
@@ -260,13 +280,16 @@ impl ToGcl for BlockStatement {
                 },
             );
 
-            (node_name.clone(), node_name)
+            GclNodeRange {
+                start: node_name.clone(),
+                end: node_name,
+            }
         })
     }
 }
 
 impl ToGcl for StatementOrDecl {
-    type Output = Either<GclCommand, (String, String)>;
+    type Output = Either<GclCommand, GclNodeRange>;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
@@ -284,7 +307,7 @@ impl ToGcl for Statement {
     /// A statement either expands to a straightforward command or a set of
     /// nodes. If it's a node, the start and end node names are returned (may be
     /// equal if only one node).
-    type Output = Either<GclCommand, (String, String)>;
+    type Output = Either<GclCommand, GclNodeRange>;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
@@ -346,8 +369,7 @@ impl ToGcl for Assignment {
 }
 
 impl ToGcl for IfStatement {
-    /// The start and end node names
-    type Output = (String, String);
+    type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         // Make sure that all the variables read by this conditional have a value
@@ -363,10 +385,13 @@ impl ToGcl for IfStatement {
 
         let pred = self.condition.to_gcl(graph);
         let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
-        let (then_node_start, then_node_end) = self.then_case.to_gcl(graph);
-        let else_node_names = self.else_case.as_ref().map(|stmt| stmt.to_gcl(graph));
-        let else_node_name = if let Some((else_node_start, _)) = &else_node_names {
-            else_node_start.clone()
+        let GclNodeRange {
+            start: then_node_start,
+            end: then_node_end,
+        } = self.then_case.to_gcl(graph);
+        let else_node_range = self.else_case.as_ref().map(|stmt| stmt.to_gcl(graph));
+        let else_node_name = if let Some(else_range) = &else_node_range {
+            else_range.start.clone()
         } else {
             end_node_name.clone()
         };
@@ -380,8 +405,8 @@ impl ToGcl for IfStatement {
         };
 
         graph.set_node_jump(&then_node_end, end_node_name.clone());
-        if let Some((_, else_node_end)) = &else_node_names {
-            graph.set_node_jump(else_node_end, end_node_name.clone());
+        if let Some(else_range) = &else_node_range {
+            graph.set_node_jump(&else_range.end, end_node_name.clone());
         }
 
         let end_node = GclNode {
@@ -393,7 +418,10 @@ impl ToGcl for IfStatement {
         graph.nodes.insert(jump_node_name.clone(), jump_node);
         graph.nodes.insert(end_node_name.clone(), end_node);
 
-        (jump_node_name, end_node_name)
+        GclNodeRange {
+            start: jump_node_name,
+            end: end_node_name,
+        }
     }
 }
 

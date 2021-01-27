@@ -58,6 +58,13 @@ pub struct GclNode {
     pub jump: GclJump,
 }
 
+/// Represents a sub-graph of nodes who all have `start` as a parent and who
+/// all eventually lead to `end` (or exit the program/error out).
+pub struct GclNodeRange {
+    pub start: String,
+    pub end: String,
+}
+
 #[derive(Clone, Debug)]
 pub enum GclJump {
     /// Push a node onto the stack and jump to the next node
