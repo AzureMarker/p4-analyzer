@@ -5,6 +5,7 @@ use crate::ast::Program;
 use crate::convert::ToGcl;
 use crate::gcl::{GclGraph, GclPredicate};
 use lalrpop_util::ParseError;
+use petgraph::dot::Dot;
 use std::io::Read;
 use z3::{Config, Context, Solver};
 
@@ -32,7 +33,13 @@ fn main() {
     // Convert to GCL
     let mut graph = GclGraph::new();
     let gcl_start_node = p4_program.to_gcl(&mut graph);
-    println!("{}", graph);
+    let graphviz_graph = Dot::with_attr_getters(
+        &graph.inner,
+        &[],
+        &|_graph, _edge| String::new(),
+        &|_graph, _node| "shape = box".to_string(),
+    );
+    println!("{}\n\n{}", graph, graphviz_graph);
 
     // Check program
     // let config = Config::new();

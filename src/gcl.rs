@@ -87,6 +87,16 @@ pub struct GclNode {
     pub command: GclCommand,
 }
 
+impl Display for GclNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Node '{}'\nprecondition = {}\ncommand = {}",
+            self.name, self.pre_condition, self.command
+        )
+    }
+}
+
 /// Represents a sub-graph of nodes who all have `start` as a parent and who
 /// all eventually lead to `end` (or exit the program/error out).
 #[derive(Copy, Clone)]
