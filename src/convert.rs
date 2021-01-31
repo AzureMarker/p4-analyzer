@@ -6,9 +6,10 @@ use crate::ast::{
     VariableDecl,
 };
 use crate::gcl::{
-    Flatten, GclAssignment, GclCommand, GclGraph, GclJump, GclNode, GclNodeRange, GclPredicate,
+    Flatten, GclAssignment, GclCommand, GclGraph, GclNode, GclNodeRange, GclPredicate,
 };
 use either::Either;
+use petgraph::graph::NodeIndex;
 
 /// Trait for converting a P4 AST node into GCL
 pub trait ToGcl {
@@ -19,7 +20,7 @@ pub trait ToGcl {
 
 impl ToGcl for Program {
     /// The starting node
-    type Output = String;
+    type Output = NodeIndex;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let mut commands = Vec::new();
@@ -37,14 +38,11 @@ impl ToGcl for Program {
             }
         }
 
-        let start_node = GclNode {
+        graph.add_node(GclNode {
             pre_condition: GclPredicate::default(), // todo
+            name: "start".to_string(),
             command: commands.flatten(),
-            jump: GclJump::End,
-        };
-        graph.nodes.insert("start".to_string(), start_node);
-
-        "start".to_string()
+        })
 
         // TODO: Parse the main decl and create driver GCL
 
@@ -70,23 +68,21 @@ impl ToGcl for ControlDecl {
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        let mut block_stmt = BlockStatement(Vec::new());
+        let mut commands = Vec::new();
 
         // Collect all of the top level local declarations (e.g. actions) and
         // local declarations (e.g. variables).
         for local_decl in &self.local_decls {
             match local_decl {
                 ControlLocalDecl::Variable(var_decl) => {
-                    block_stmt
-                        .0
-                        .push(StatementOrDecl::VariableDecl(var_decl.clone()));
+                    commands.push(StatementOrDecl::VariableDecl(var_decl.clone()));
                 }
-                ControlLocalDecl::Instantiation(instantiation) => block_stmt
-                    .0
-                    .push(StatementOrDecl::Instantiation(instantiation.clone())),
-                ControlLocalDecl::Constant(const_decl) => block_stmt
-                    .0
-                    .push(StatementOrDecl::ConstantDecl(const_decl.clone())),
+                ControlLocalDecl::Instantiation(instantiation) => {
+                    commands.push(StatementOrDecl::Instantiation(instantiation.clone()))
+                }
+                ControlLocalDecl::Constant(const_decl) => {
+                    commands.push(StatementOrDecl::ConstantDecl(const_decl.clone()))
+                }
                 ControlLocalDecl::Action(action_decl) => {
                     // The nodes will be placed into the graph
                     action_decl.to_gcl(graph);
@@ -95,24 +91,21 @@ impl ToGcl for ControlDecl {
         }
 
         // Add in statements from the apply block
-        block_stmt.0.extend_from_slice(&self.apply_body.0);
+        commands.extend_from_slice(&self.apply_body.0);
 
         // Create the block node
-        let block_range = block_stmt.to_gcl(graph);
+        let block_range = BlockStatement(commands).to_gcl(graph);
 
         // Create the control node
-        let node_name = format!("__control__{}", self.name);
-        let node = GclNode {
+        let node_idx = graph.add_node(GclNode {
             pre_condition: GclPredicate::default(), // todo
+            name: format!("__control__{}", self.name),
             command: GclCommand::default(),
-            jump: GclJump::Direct {
-                next_node: block_range.start,
-            },
-        };
-        graph.nodes.insert(node_name.clone(), node);
+        });
+        graph.add_edge(node_idx, block_range.start, GclPredicate::default());
 
         GclNodeRange {
-            start: node_name,
+            start: node_idx,
             end: block_range.end,
         }
     }
@@ -135,66 +128,25 @@ impl ToGcl for ConstantDecl {
     }
 }
 
-impl<T: ToGcl<Output = GclCommand>> ToGcl for [T] {
-    type Output = GclCommand;
-
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        match self.split_first() {
-            Some((head, [])) => head.to_gcl(graph),
-            Some((head, tail)) => {
-                GclCommand::Sequence(Box::new(head.to_gcl(graph)), Box::new(tail.to_gcl(graph)))
-            }
-            None => GclCommand::default(),
-        }
-    }
-}
-
-impl ToGcl for ControlLocalDecl {
-    type Output = Either<GclCommand, GclNodeRange>;
-
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        match self {
-            ControlLocalDecl::Variable(var_decl) => Either::Left(var_decl.to_gcl(graph)),
-            ControlLocalDecl::Instantiation(instantiation) => {
-                Either::Left(instantiation.to_gcl(graph))
-            }
-            ControlLocalDecl::Constant(const_decl) => Either::Left(const_decl.to_gcl(graph)),
-            ControlLocalDecl::Action(action_decl) => Either::Right(action_decl.to_gcl(graph)),
-        }
-    }
-}
-
 impl ToGcl for ActionDecl {
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let body_range = self.body.to_gcl(graph);
-        let start_name = format!("__action__{}", self.name);
-        let end_name = format!("__action_end__{}", self.name);
-        graph.set_node_jump(&body_range.end, end_name.clone());
 
-        graph.nodes.insert(
-            start_name.clone(),
-            GclNode {
-                pre_condition: GclPredicate::default(),
-                command: GclCommand::default(),
-                jump: GclJump::Direct {
-                    next_node: body_range.start,
-                },
-            },
-        );
-        graph.nodes.insert(
-            end_name.clone(),
-            GclNode {
-                pre_condition: GclPredicate::default(),
-                command: GclCommand::default(),
-                jump: GclJump::Pop,
-            },
-        );
+        // TODO: Do we need an empty start node? Might be able to just store the
+        //       node range in a map indexed by action name, solving the lookup
+        //       problem.
+        let start_node_idx = graph.add_node(GclNode {
+            pre_condition: GclPredicate::default(),
+            name: format!("__action__{}", self.name),
+            command: GclCommand::default(),
+        });
+        graph.add_edge(start_node_idx, body_range.start, GclPredicate::default());
 
         GclNodeRange {
-            start: start_name,
-            end: end_name,
+            start: start_node_idx,
+            end: body_range.end,
         }
     }
 }
@@ -211,26 +163,27 @@ impl ToGcl for BlockStatement {
             graph: &mut GclGraph,
             block_start_end: &mut Option<GclNodeRange>,
         ) {
-            let command = std::mem::take(current_commands).flatten();
-            let node_name = graph.create_name("block_stmt_body");
+            // Make a node from the commands
+            let name = graph.create_name("block_stmt_body");
+            let node_idx = graph.add_node(GclNode {
+                pre_condition: GclPredicate::default(), // todo
+                name,
+                command: std::mem::take(current_commands).flatten(),
+            });
 
+            // Hook up the node to the end of the node chain
             if let Some(range) = block_start_end {
-                graph.set_node_jump(&range.end, node_name.clone());
+                graph.add_edge(range.end, node_idx, GclPredicate::default());
+                *block_start_end = Some(GclNodeRange {
+                    start: range.start,
+                    end: node_idx,
+                });
             } else {
                 *block_start_end = Some(GclNodeRange {
-                    start: node_name.clone(),
-                    end: node_name.clone(),
+                    start: node_idx,
+                    end: node_idx,
                 });
             }
-
-            graph.nodes.insert(
-                node_name,
-                GclNode {
-                    pre_condition: GclPredicate::default(), // todo
-                    command,
-                    jump: GclJump::End,
-                },
-            );
         };
 
         // Expand each statement and collect all of the nodes (e.g. from if
@@ -252,8 +205,12 @@ impl ToGcl for BlockStatement {
                         );
                     }
 
-                    if let Some(range) = &block_start_end {
-                        graph.set_node_jump(&range.end, start_node);
+                    if let Some(range) = block_start_end {
+                        graph.add_edge(range.end, start_node, GclPredicate::default());
+                        block_start_end = Some(GclNodeRange {
+                            start: range.start,
+                            end: end_node,
+                        });
                     } else {
                         block_start_end = Some(GclNodeRange {
                             start: start_node,
@@ -264,27 +221,13 @@ impl ToGcl for BlockStatement {
             }
         }
 
-        if !current_commands.is_empty() {
+        // Make sure to add any trailing commands to the graph, and ensure that
+        // we have at least one node in the range.
+        if !current_commands.is_empty() || block_start_end.is_none() {
             create_node_from_commands(&mut current_commands, graph, &mut block_start_end);
         }
 
-        block_start_end.unwrap_or_else(|| {
-            // Empty block
-            let node_name = graph.create_name("block_stmt_body");
-            graph.nodes.insert(
-                node_name.clone(),
-                GclNode {
-                    pre_condition: GclPredicate::default(),
-                    command: GclCommand::default(),
-                    jump: GclJump::End,
-                },
-            );
-
-            GclNodeRange {
-                start: node_name.clone(),
-                end: node_name,
-            }
-        })
+        block_start_end.unwrap()
     }
 }
 
@@ -304,9 +247,7 @@ impl ToGcl for StatementOrDecl {
 }
 
 impl ToGcl for Statement {
-    /// A statement either expands to a straightforward command or a set of
-    /// nodes. If it's a node, the start and end node names are returned (may be
-    /// equal if only one node).
+    /// A statement expands to a set of one or more nodes
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
@@ -316,7 +257,7 @@ impl ToGcl for Statement {
             Statement::Assignment(assignment) => {
                 let node_name = assignment.to_gcl(graph);
                 GclNodeRange {
-                    start: node_name.clone(),
+                    start: node_name,
                     end: node_name,
                 }
             }
@@ -365,12 +306,12 @@ impl ToGcl for Instantiation {
 
 impl ToGcl for Assignment {
     /// The GCL node
-    type Output = String;
+    type Output = NodeIndex;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        let node_name = graph.create_name(&format!("__assignment__{}", self.name));
         let node = GclNode {
             pre_condition: GclPredicate::Var(format!("_declared_var__{}", self.name)),
+            name: graph.create_name(&format!("__assignment__{}", self.name)),
             command: GclCommand::Sequence(
                 Box::new(GclCommand::Assignment(GclAssignment {
                     name: format!("_has_value__{}", self.name),
@@ -381,12 +322,9 @@ impl ToGcl for Assignment {
                     pred: self.value.to_gcl(graph),
                 })),
             ),
-            jump: GclJump::End,
         };
 
-        graph.nodes.insert(node_name.clone(), node);
-
-        node_name
+        graph.add_node(node)
     }
 }
 
@@ -402,47 +340,49 @@ impl ToGcl for IfStatement {
             .collect();
         let var_value_check_gcl = var_predicates.flatten();
 
-        let jump_node_name = graph.create_name("if_jump");
-        let end_node_name = graph.create_name("if_end");
+        // Create the end node first so we can refer to its index
+        let end_node = GclNode {
+            pre_condition: GclPredicate::default(),
+            name: graph.create_name("if_end"),
+            command: GclCommand::default(),
+        };
+        let end_node_idx = graph.add_node(end_node);
 
+        // Calculate the if condition predicates
         let pred = self.condition.to_gcl(graph);
         let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
+
+        // Convert the then and else branches to GCL
         let GclNodeRange {
             start: then_node_start,
             end: then_node_end,
         } = self.then_case.to_gcl(graph);
         let else_node_range = self.else_case.as_ref().map(|stmt| stmt.to_gcl(graph));
-        let else_node_name = if let Some(else_range) = &else_node_range {
-            else_range.start.clone()
+        let else_node_idx = if let Some(else_range) = else_node_range {
+            else_range.start
         } else {
-            end_node_name.clone()
+            end_node_idx
         };
 
+        // Create the jump (start) node
         let jump_node = GclNode {
             pre_condition: var_value_check_gcl,
+            name: graph.create_name("if_jump"),
             command: GclCommand::default(),
-            jump: GclJump::Conditional {
-                nodes: vec![(pred, then_node_start), (negated_pred, else_node_name)],
-            },
         };
+        let jump_node_idx = graph.inner.add_node(jump_node);
+        graph.add_edge(jump_node_idx, then_node_start, pred);
+        graph.add_edge(jump_node_idx, else_node_idx, negated_pred);
 
-        graph.set_node_jump(&then_node_end, end_node_name.clone());
-        if let Some(else_range) = &else_node_range {
-            graph.set_node_jump(&else_range.end, end_node_name.clone());
+        // Add edges to the end node from then and else branches
+        graph.add_edge(then_node_end, end_node_idx, GclPredicate::default());
+        if let Some(else_range) = else_node_range {
+            graph.add_edge(else_range.end, end_node_idx, GclPredicate::default());
         }
 
-        let end_node = GclNode {
-            pre_condition: GclPredicate::default(),
-            command: GclCommand::default(),
-            jump: GclJump::End,
-        };
-
-        graph.nodes.insert(jump_node_name.clone(), jump_node);
-        graph.nodes.insert(end_node_name.clone(), end_node);
-
         GclNodeRange {
-            start: jump_node_name,
-            end: end_node_name,
+            start: jump_node_idx,
+            end: end_node_idx,
         }
     }
 }

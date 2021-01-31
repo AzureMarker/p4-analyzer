@@ -275,6 +275,7 @@ dependencies = [
  "either",
  "lalrpop",
  "lalrpop-util",
+ "petgraph",
  "z3",
 ]
 

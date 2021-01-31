@@ -1,18 +1,22 @@
 //! Guarded Command Language
 
-use std::collections::HashMap;
+use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::{StableDiGraph, StableGraph};
+use petgraph::visit::EdgeRef;
+use petgraph::Direction;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
+use std::ops::{Deref, DerefMut};
 
 pub struct GclGraph {
-    pub nodes: HashMap<String, GclNode>,
+    pub inner: StableDiGraph<GclNode, GclPredicate>,
     next_id_counter: usize,
 }
 
 impl GclGraph {
     pub fn new() -> Self {
         GclGraph {
-            nodes: HashMap::new(),
+            inner: StableGraph::new(),
             next_id_counter: 0,
         }
     }
@@ -23,27 +27,52 @@ impl GclGraph {
         self.next_id_counter += 1;
         name
     }
+}
 
-    /// Update the node to jump directly to the new jump node, replacing any
-    /// previous jump behavior.
-    pub fn set_node_jump(&mut self, node_name: &str, new_jump: String) {
-        self.nodes.get_mut(node_name).unwrap().jump = GclJump::Direct {
-            next_node: new_jump,
-        };
+impl Deref for GclGraph {
+    type Target = StableDiGraph<GclNode, GclPredicate>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for GclGraph {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 
 impl Display for GclGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Graph ({} nodes):", self.nodes.len())?;
+        writeln!(f, "Graph ({} nodes):", self.inner.node_count())?;
 
-        let mut nodes: Vec<_> = self.nodes.iter().collect();
-        nodes.sort_by_key(|(name, _)| name.as_str());
-        for (name, node) in nodes {
+        let mut nodes: Vec<(&GclNode, Vec<String>)> = self
+            .inner
+            .node_indices()
+            .map(|idx| {
+                (
+                    self.inner.node_weight(idx).unwrap(),
+                    self.inner
+                        .edges_directed(idx, Direction::Outgoing)
+                        .map(|edge| {
+                            format!(
+                                "{} => {}",
+                                edge.weight(),
+                                self.inner.node_weight(edge.target()).unwrap().name
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+        nodes.sort_by_key(|(node, _)| node.name.as_str());
+
+        for (node, edges) in nodes {
             writeln!(
                 f,
-                "Node '{}'\n  pre_condition = {}\n  command = {}\n  jump = {}",
-                name, node.pre_condition, node.command, node.jump
+                "Node '{}'\n  pre_condition = {}\n  command = {}\n  jump = {:?}",
+                node.name, node.pre_condition, node.command, edges
             )?;
         }
 
@@ -54,60 +83,16 @@ impl Display for GclGraph {
 #[derive(Debug)]
 pub struct GclNode {
     pub pre_condition: GclPredicate,
+    pub name: String,
     pub command: GclCommand,
-    pub jump: GclJump,
 }
 
 /// Represents a sub-graph of nodes who all have `start` as a parent and who
 /// all eventually lead to `end` (or exit the program/error out).
+#[derive(Copy, Clone)]
 pub struct GclNodeRange {
-    pub start: String,
-    pub end: String,
-}
-
-#[derive(Clone, Debug)]
-pub enum GclJump {
-    /// Push a node onto the stack and jump to the next node
-    Push {
-        return_node: String,
-        next_node: String,
-    },
-    /// Pop a node off of the stack and jump to it
-    Pop,
-    /// Jump directly to a node
-    Direct { next_node: String },
-    /// Choose the first node to jump to whose predicate is true
-    Conditional {
-        /// A predicate plus a node name
-        nodes: Vec<(GclPredicate, String)>,
-    },
-    /// Stop execution (only used in the end node or as a temporary jump value)
-    End,
-}
-
-impl Display for GclJump {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            GclJump::Push {
-                return_node,
-                next_node,
-            } => {
-                write!(f, "push({}, {})", return_node, next_node)
-            }
-            GclJump::Pop => write!(f, "pop()"),
-            GclJump::Direct { next_node } => write!(f, "direct({})", next_node),
-            GclJump::Conditional { nodes } => write!(
-                f,
-                "conditional({})",
-                nodes
-                    .iter()
-                    .map(|(pred, node)| format!("({}, {})", pred, node))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            GclJump::End => write!(f, "end()"),
-        }
-    }
+    pub start: NodeIndex,
+    pub end: NodeIndex,
 }
 
 #[derive(Clone, Debug)]
