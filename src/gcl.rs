@@ -4,13 +4,15 @@ use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::{StableDiGraph, StableGraph};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
 
 pub struct GclGraph {
-    pub inner: StableDiGraph<GclNode, GclPredicate>,
+    inner: StableDiGraph<GclNode, GclPredicate>,
     next_id_counter: usize,
+    functions: HashMap<String, GclNodeRange>,
 }
 
 impl GclGraph {
@@ -18,6 +20,7 @@ impl GclGraph {
         GclGraph {
             inner: StableGraph::new(),
             next_id_counter: 0,
+            functions: HashMap::new(),
         }
     }
 
@@ -26,6 +29,16 @@ impl GclGraph {
         let name = format!("{}_{}", prefix, self.next_id_counter);
         self.next_id_counter += 1;
         name
+    }
+
+    /// Register the node range for a function. This is used later when calling
+    /// it to set up edges.
+    pub fn register_function(&mut self, name: String, range: GclNodeRange) {
+        self.functions.insert(name, range);
+    }
+
+    pub fn get_function(&self, name: &str) -> Option<GclNodeRange> {
+        self.functions.get(name).copied()
     }
 }
 

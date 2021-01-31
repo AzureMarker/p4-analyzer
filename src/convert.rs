@@ -84,8 +84,13 @@ impl ToGcl for ControlDecl {
                     commands.push(StatementOrDecl::ConstantDecl(const_decl.clone()))
                 }
                 ControlLocalDecl::Action(action_decl) => {
-                    // The nodes will be placed into the graph
-                    action_decl.to_gcl(graph);
+                    let action_range = action_decl.to_gcl(graph);
+
+                    // Register the action under the namespace of this control block
+                    graph.register_function(
+                        format!("{}::{}", self.name, action_decl.name),
+                        action_range,
+                    );
                 }
             }
         }
@@ -133,16 +138,15 @@ impl ToGcl for ActionDecl {
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let body_range = self.body.to_gcl(graph);
-
-        // TODO: Do we need an empty start node? Might be able to just store the
-        //       node range in a map indexed by action name, solving the lookup
-        //       problem.
         let start_node_idx = graph.add_node(GclNode {
             pre_condition: GclPredicate::default(),
             name: format!("__action__{}", self.name),
             command: GclCommand::default(),
         });
         graph.add_edge(start_node_idx, body_range.start, GclPredicate::default());
+
+        // Note: the action is registered as a function with the graph in
+        // ControlDecl::to_gcl so it can be namespaced under the control block.
 
         GclNodeRange {
             start: start_node_idx,
@@ -370,7 +374,7 @@ impl ToGcl for IfStatement {
             name: graph.create_name("if_jump"),
             command: GclCommand::default(),
         };
-        let jump_node_idx = graph.inner.add_node(jump_node);
+        let jump_node_idx = graph.add_node(jump_node);
         graph.add_edge(jump_node_idx, then_node_start, pred);
         graph.add_edge(jump_node_idx, else_node_idx, negated_pred);
 

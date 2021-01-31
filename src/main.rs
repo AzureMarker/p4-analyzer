@@ -34,7 +34,7 @@ fn main() {
     let mut graph = GclGraph::new();
     let gcl_start_node = p4_program.to_gcl(&mut graph);
     let graphviz_graph = Dot::with_attr_getters(
-        &graph.inner,
+        &*graph,
         &[],
         &|_graph, _edge| String::new(),
         &|_graph, _node| "shape = box".to_string(),
