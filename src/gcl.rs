@@ -5,9 +5,9 @@ use petgraph::stable_graph::{StableDiGraph, StableGraph};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use std::collections::HashMap;
-use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
+use std::{fmt, iter};
 
 pub struct GclGraph {
     inner: StableDiGraph<GclNode, GclPredicate>,
@@ -122,9 +122,7 @@ pub struct GclNodeRange {
 pub enum GclCommand {
     Assignment(GclAssignment),
     Sequence(Box<GclCommand>, Box<GclCommand>),
-    Choice(Box<GclCommand>, Box<GclCommand>),
     Assumption(GclPredicate),
-    Assert(GclPredicate),
 }
 
 impl Display for GclCommand {
@@ -132,9 +130,7 @@ impl Display for GclCommand {
         match self {
             GclCommand::Assignment(assignment) => Display::fmt(assignment, f),
             GclCommand::Sequence(cmd1, cmd2) => write!(f, "{}; {}", cmd1, cmd2),
-            GclCommand::Choice(cmd1, cmd2) => write!(f, "({}) [] ({})", cmd1, cmd2),
             GclCommand::Assumption(pred) => write!(f, "assume({})", pred),
-            GclCommand::Assert(pred) => write!(f, "assert({})", pred),
         }
     }
 }
@@ -161,6 +157,18 @@ impl Flatten for Vec<GclCommand> {
         command_iter.fold(last_command, |acc, next| {
             GclCommand::Sequence(Box::new(next), Box::new(acc))
         })
+    }
+}
+
+impl GclCommand {
+    pub fn get_assignments(&self) -> Box<dyn Iterator<Item = &GclAssignment> + '_> {
+        match self {
+            GclCommand::Assignment(assignment) => Box::new(iter::once(assignment)),
+            GclCommand::Sequence(left, right) => {
+                Box::new(left.get_assignments().chain(right.get_assignments()))
+            }
+            GclCommand::Assumption(_) => Box::new(iter::empty()),
+        }
     }
 }
 
@@ -204,6 +212,25 @@ impl Flatten for Vec<GclPredicate> {
         pred_iter.fold(last_pred, |acc, next| {
             GclPredicate::Conjunction(Box::new(next), Box::new(acc))
         })
+    }
+}
+
+impl GclPredicate {
+    /// Get all of the variables this expression reads from
+    pub fn find_all_vars(&self) -> Vec<String> {
+        match self {
+            GclPredicate::Bool(_) => Vec::new(),
+            GclPredicate::Var(name) => vec![name.clone()],
+            GclPredicate::Negation(inner) => inner.find_all_vars(),
+            GclPredicate::Conjunction(left, right)
+            | GclPredicate::Disjunction(left, right)
+            | GclPredicate::Equality(left, right)
+            | GclPredicate::Implication(left, right) => {
+                let mut vars = left.find_all_vars();
+                vars.extend(right.find_all_vars());
+                vars
+            }
+        }
     }
 }
 

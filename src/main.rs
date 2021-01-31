@@ -32,7 +32,7 @@ fn main() {
 
     // Convert to GCL
     let mut graph = GclGraph::new();
-    let gcl_start_node = p4_program.to_gcl(&mut graph);
+    let _gcl_start_node = p4_program.to_gcl(&mut graph);
     let graphviz_graph = Dot::with_attr_getters(
         &*graph,
         &[],
@@ -40,6 +40,14 @@ fn main() {
         &|_graph, _node| "shape = box".to_string(),
     );
     println!("{}\n\n{}", graph, graphviz_graph);
+
+    println!("\nWeakest Liberal Preconditions:");
+    let node_wlp = graph.to_wlp();
+    for (node_idx, wlp) in node_wlp {
+        let node_name = &graph.node_weight(node_idx).unwrap().name;
+
+        println!("Node '{}': {}", node_name, wlp);
+    }
 
     // Check program
     // let config = Config::new();

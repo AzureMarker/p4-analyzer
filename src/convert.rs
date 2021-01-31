@@ -413,10 +413,10 @@ impl ToGcl for Expr {
 
 impl Expr {
     /// Get all of the variables this expression reads from
-    fn find_all_vars(&self) -> Vec<String> {
+    fn find_all_vars(&self) -> Vec<&str> {
         match self {
             Expr::Bool(_) => Vec::new(),
-            Expr::Var(name) => vec![name.clone()],
+            Expr::Var(name) => vec![name],
             Expr::And(left, right) | Expr::Or(left, right) => {
                 let mut vars = left.find_all_vars();
                 vars.extend(right.find_all_vars());
