@@ -117,7 +117,8 @@ pub struct GclNodeRange {
 pub enum GclCommand {
     Assignment(GclAssignment),
     Sequence(Box<GclCommand>, Box<GclCommand>),
-    Assumption(GclPredicate),
+    /// A no-op, used in empty nodes
+    Skip,
     /// Represents a bug in the program, ex. if an assert fails
     Bug,
 }
@@ -127,16 +128,15 @@ impl Display for GclCommand {
         match self {
             GclCommand::Assignment(assignment) => Display::fmt(assignment, f),
             GclCommand::Sequence(cmd1, cmd2) => write!(f, "{}; {}", cmd1, cmd2),
-            GclCommand::Assumption(pred) => write!(f, "assume({})", pred),
+            GclCommand::Skip => f.write_str("skip"),
             GclCommand::Bug => f.write_str("bug"),
         }
     }
 }
 
 impl Default for GclCommand {
-    /// A "no operation" command in GCL
     fn default() -> Self {
-        GclCommand::Assumption(GclPredicate::default())
+        GclCommand::Skip
     }
 }
 
@@ -165,7 +165,7 @@ impl GclCommand {
             GclCommand::Sequence(left, right) => {
                 Box::new(left.get_assignments().chain(right.get_assignments()))
             }
-            GclCommand::Assumption(_) | GclCommand::Bug => Box::new(iter::empty()),
+            GclCommand::Skip | GclCommand::Bug => Box::new(iter::empty()),
         }
     }
 }
