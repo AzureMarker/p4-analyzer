@@ -130,7 +130,7 @@ impl ToGcl for ActionDecl {
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let body_range = self.body.to_gcl(graph);
         let start_node_idx = graph.add_node(GclNode {
-            name: format!("__action__{}", self.name),
+            name: format!("action__{}", self.name),
             command: GclCommand::default(),
         });
         graph.add_edge(start_node_idx, body_range.start, GclPredicate::default());
