@@ -100,17 +100,10 @@ impl ToGcl for ControlDecl {
         // Create the block node
         let block_range = BlockStatement(commands).to_gcl(graph);
 
-        // Create the control node
-        let node_idx = graph.add_node(GclNode {
-            name: format!("__control__{}", self.name),
-            command: GclCommand::default(),
-        });
-        graph.add_edge(node_idx, block_range.start, GclPredicate::default());
+        // Rename the block node start
+        graph.node_weight_mut(block_range.start).unwrap().name = format!("control__{}", self.name);
 
-        GclNodeRange {
-            start: node_idx,
-            end: block_range.end,
-        }
+        block_range
     }
 }
 
@@ -303,7 +296,7 @@ impl ToGcl for Assignment {
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let node = GclNode {
-            name: graph.create_name(&format!("__assignment__{}", self.name)),
+            name: graph.create_name(&format!("assignment__{}", self.name)),
             command: GclCommand::Sequence(
                 Box::new(GclCommand::Assignment(GclAssignment {
                     name: format!("_has_value__{}", self.name),
@@ -434,13 +427,13 @@ fn make_assert_node(
     next_node: NodeIndex,
 ) -> NodeIndex {
     let bug_node = GclNode {
-        name: graph.create_name("__bug"),
+        name: graph.create_name("bug"),
         command: GclCommand::Bug,
     };
     let bug_node_idx = graph.add_node(bug_node);
 
     let assert_node = GclNode {
-        name: graph.create_name("__assert"),
+        name: graph.create_name("assert"),
         command: GclCommand::default(),
     };
     let assert_node_idx = graph.add_node(assert_node);
