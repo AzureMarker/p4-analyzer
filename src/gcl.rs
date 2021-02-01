@@ -62,7 +62,7 @@ pub struct GclNode {
 
 impl Display for GclNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Node '{}'\ncommand = {}", self.name, self.command)
+        write!(f, "Node '{}'\n{:#}\n", self.name, self.command)
     }
 }
 
@@ -88,7 +88,13 @@ impl Display for GclCommand {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             GclCommand::Assignment(assignment) => Display::fmt(assignment, f),
-            GclCommand::Sequence(cmd1, cmd2) => write!(f, "{}; {}", cmd1, cmd2),
+            GclCommand::Sequence(cmd1, cmd2) => {
+                if f.alternate() {
+                    write!(f, "{};\n{}", cmd1, cmd2)
+                } else {
+                    write!(f, "{}; {}", cmd1, cmd2)
+                }
+            }
             GclCommand::Skip => f.write_str("skip"),
             GclCommand::Bug => f.write_str("bug"),
         }
