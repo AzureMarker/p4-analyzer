@@ -6,8 +6,11 @@ use crate::convert::ToGcl;
 use crate::gcl::{GclGraph, GclPredicate};
 use lalrpop_util::ParseError;
 use petgraph::dot::Dot;
+use petgraph::graph::NodeIndex;
+use std::collections::HashMap;
 use std::io::Read;
-use z3::{Config, Context, Solver};
+use std::ops::Deref;
+use z3::{Config, Context, SatResult, Solver};
 
 mod ast;
 mod convert;
@@ -33,39 +36,66 @@ fn main() {
     // Convert to GCL
     let mut graph = GclGraph::new();
     let _gcl_start_node = p4_program.to_gcl(&mut graph);
-    let graphviz_graph = Dot::with_attr_getters(
-        &*graph,
-        &[],
-        &|_graph, _edge| String::new(),
-        &|_graph, _node| "shape = box".to_string(),
-    );
-    println!("{}\n\n{}", graph, graphviz_graph);
+    println!("{}", graph);
 
-    println!("\nWeakest Liberal Preconditions:");
+    // Calculate the weakest liberal precondition for each node
+    println!("Weakest Liberal Preconditions:");
     let node_wlp = graph.to_wlp();
+    display_wlp(&graph, &node_wlp);
+
+    // Calculate reachability
+    let is_reachable = calculate_reachable(&graph, &node_wlp);
+
+    // Print out the graphviz representation
+    let graphviz = make_graphviz(&graph, &is_reachable);
+    println!("\n{}", graphviz);
+}
+
+fn display_wlp(graph: &GclGraph, node_wlp: &HashMap<NodeIndex, GclPredicate>) {
     for (node_idx, wlp) in node_wlp {
-        let node_name = &graph.node_weight(node_idx).unwrap().name;
+        let node_name = &graph.node_weight(*node_idx).unwrap().name;
 
         println!("Node '{}': {}", node_name, wlp);
     }
+}
 
-    // Check program
-    // let config = Config::new();
-    // let context = Context::new(&config);
-    // let solver = Solver::new(&context);
-    // for (name, gcl_program) in gcl_programs {
-    //     let wlp_predicate = gcl_program.to_wlp(GclPredicate::Bool(true));
-    //     let z3_bool = wlp_predicate.as_z3_bool(&context);
-    //     solver.assert(&z3_bool);
-    //     let z3_output = solver.check();
-    //
-    //     println!(
-    //         "\nProgram '{}'\n  GCL: {}\n  WLP: {}\n  Z3: {}\n  Output: {:?}",
-    //         name, gcl_program, wlp_predicate, z3_bool, z3_output
-    //     );
-    //
-    //     solver.reset();
-    // }
+fn calculate_reachable(
+    graph: &GclGraph,
+    node_wlp: &HashMap<NodeIndex, GclPredicate>,
+) -> HashMap<NodeIndex, bool> {
+    let config = Config::new();
+    let context = Context::new(&config);
+    let solver = Solver::new(&context);
+
+    graph
+        .node_indices()
+        .map(|node_idx| {
+            let wlp = node_wlp.get(&node_idx).unwrap();
+            solver.assert(&wlp.as_z3_bool(&context));
+            let is_reachable = solver.check() == SatResult::Sat;
+            solver.reset();
+
+            (node_idx, is_reachable)
+        })
+        .collect()
+}
+
+fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> String {
+    let get_node_attributes = |_graph, (node_idx, _)| {
+        if *is_reachable.get(&node_idx).unwrap() {
+            "shape = box, color = green".to_string()
+        } else {
+            "shape = box, color = red".to_string()
+        }
+    };
+    let graphviz_graph = Dot::with_attr_getters(
+        graph.deref(),
+        &[],
+        &|_graph, _edge| String::new(),
+        &get_node_attributes,
+    );
+
+    graphviz_graph.to_string()
 }
 
 /// Parse the P4 program. If there are errors during parsing, the program will
