@@ -36,7 +36,6 @@ fn main() {
     // Convert to GCL
     let mut graph = GclGraph::new();
     let _gcl_start_node = p4_program.to_gcl(&mut graph);
-    println!("{}", graph);
 
     // Calculate the weakest liberal precondition for each node
     println!("Weakest Liberal Preconditions:");

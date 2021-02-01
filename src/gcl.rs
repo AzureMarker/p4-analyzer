@@ -2,8 +2,6 @@
 
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::{StableDiGraph, StableGraph};
-use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
@@ -53,43 +51,6 @@ impl Deref for GclGraph {
 impl DerefMut for GclGraph {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
-    }
-}
-
-impl Display for GclGraph {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Graph ({} nodes):", self.inner.node_count())?;
-
-        let mut nodes: Vec<(&GclNode, Vec<String>)> = self
-            .inner
-            .node_indices()
-            .map(|idx| {
-                (
-                    self.inner.node_weight(idx).unwrap(),
-                    self.inner
-                        .edges_directed(idx, Direction::Outgoing)
-                        .map(|edge| {
-                            format!(
-                                "{} => {}",
-                                edge.weight(),
-                                self.inner.node_weight(edge.target()).unwrap().name
-                            )
-                        })
-                        .collect(),
-                )
-            })
-            .collect();
-        nodes.sort_by_key(|(node, _)| node.name.as_str());
-
-        for (node, edges) in nodes {
-            writeln!(
-                f,
-                "Node '{}'\n  command = {}\n  jump = {:?}",
-                node.name, node.command, edges
-            )?;
-        }
-
-        Ok(())
     }
 }
 
