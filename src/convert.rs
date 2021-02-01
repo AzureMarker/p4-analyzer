@@ -39,7 +39,6 @@ impl ToGcl for Program {
         }
 
         graph.add_node(GclNode {
-            pre_condition: GclPredicate::default(), // todo
             name: "start".to_string(),
             command: commands.flatten(),
         })
@@ -103,7 +102,6 @@ impl ToGcl for ControlDecl {
 
         // Create the control node
         let node_idx = graph.add_node(GclNode {
-            pre_condition: GclPredicate::default(), // todo
             name: format!("__control__{}", self.name),
             command: GclCommand::default(),
         });
@@ -139,7 +137,6 @@ impl ToGcl for ActionDecl {
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let body_range = self.body.to_gcl(graph);
         let start_node_idx = graph.add_node(GclNode {
-            pre_condition: GclPredicate::default(),
             name: format!("__action__{}", self.name),
             command: GclCommand::default(),
         });
@@ -170,7 +167,6 @@ impl ToGcl for BlockStatement {
             // Make a node from the commands
             let name = graph.create_name("block_stmt_body");
             let node_idx = graph.add_node(GclNode {
-                pre_condition: GclPredicate::default(), // todo
                 name,
                 command: std::mem::take(current_commands).flatten(),
             });
@@ -251,20 +247,13 @@ impl ToGcl for StatementOrDecl {
 }
 
 impl ToGcl for Statement {
-    /// A statement expands to a set of one or more nodes
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
             Statement::Block(block) => block.to_gcl(graph),
             Statement::If(if_statement) => if_statement.to_gcl(graph),
-            Statement::Assignment(assignment) => {
-                let node_name = assignment.to_gcl(graph);
-                GclNodeRange {
-                    start: node_name,
-                    end: node_name,
-                }
-            }
+            Statement::Assignment(assignment) => assignment.to_gcl(graph),
         }
     }
 }
@@ -310,11 +299,10 @@ impl ToGcl for Instantiation {
 
 impl ToGcl for Assignment {
     /// The GCL node
-    type Output = NodeIndex;
+    type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let node = GclNode {
-            pre_condition: GclPredicate::Var(format!("_declared_var__{}", self.name)),
             name: graph.create_name(&format!("__assignment__{}", self.name)),
             command: GclCommand::Sequence(
                 Box::new(GclCommand::Assignment(GclAssignment {
@@ -327,8 +315,18 @@ impl ToGcl for Assignment {
                 })),
             ),
         };
+        let node_idx = graph.add_node(node);
 
-        graph.add_node(node)
+        let assert_node_idx = make_assert_node(
+            graph,
+            GclPredicate::Var(format!("_declared_var__{}", self.name)),
+            node_idx,
+        );
+
+        GclNodeRange {
+            start: assert_node_idx,
+            end: node_idx,
+        }
     }
 }
 
@@ -346,7 +344,6 @@ impl ToGcl for IfStatement {
 
         // Create the end node first so we can refer to its index
         let end_node = GclNode {
-            pre_condition: GclPredicate::default(),
             name: graph.create_name("if_end"),
             command: GclCommand::default(),
         };
@@ -370,13 +367,15 @@ impl ToGcl for IfStatement {
 
         // Create the jump (start) node
         let jump_node = GclNode {
-            pre_condition: var_value_check_gcl,
             name: graph.create_name("if_jump"),
             command: GclCommand::default(),
         };
         let jump_node_idx = graph.add_node(jump_node);
         graph.add_edge(jump_node_idx, then_node_start, pred);
         graph.add_edge(jump_node_idx, else_node_idx, negated_pred);
+
+        // Create the assertion node
+        let assert_node_idx = make_assert_node(graph, var_value_check_gcl, jump_node_idx);
 
         // Add edges to the end node from then and else branches
         graph.add_edge(then_node_end, end_node_idx, GclPredicate::default());
@@ -385,7 +384,7 @@ impl ToGcl for IfStatement {
         }
 
         GclNodeRange {
-            start: jump_node_idx,
+            start: assert_node_idx,
             end: end_node_idx,
         }
     }
@@ -425,4 +424,33 @@ impl Expr {
             Expr::Negation(inner) => inner.find_all_vars(),
         }
     }
+}
+
+/// Create an assertion node which, when the predicate is true, jumps to
+/// the `next_node`, otherwise jumps to a new "bug" node.
+fn make_assert_node(
+    graph: &mut GclGraph,
+    predicate: GclPredicate,
+    next_node: NodeIndex,
+) -> NodeIndex {
+    let bug_node = GclNode {
+        name: graph.create_name("__bug"),
+        command: GclCommand::Bug,
+    };
+    let bug_node_idx = graph.add_node(bug_node);
+
+    let assert_node = GclNode {
+        name: graph.create_name("__assert"),
+        command: GclCommand::default(),
+    };
+    let assert_node_idx = graph.add_node(assert_node);
+
+    graph.add_edge(assert_node_idx, next_node, predicate.clone());
+    graph.add_edge(
+        assert_node_idx,
+        bug_node_idx,
+        GclPredicate::Negation(Box::new(predicate)),
+    );
+
+    assert_node_idx
 }

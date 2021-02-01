@@ -1,4 +1,4 @@
-use crate::gcl::{GclAssignment, GclCommand, GclGraph, GclPredicate};
+use crate::gcl::{GclAssignment, GclGraph, GclPredicate};
 use petgraph::algo::toposort;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -51,22 +51,13 @@ impl GclGraph {
 
                     GclPredicate::Conjunction(Box::new(parent_wlp.clone()), Box::new(edge_pred))
                 });
-            let mut precondition = node.pre_condition.clone();
-
-            for var in precondition.find_all_vars() {
-                if let Some(value) = common_assignments.get(var.as_str()) {
-                    precondition.replace_var(&var, *value);
-                }
-            }
 
             let wlp = if let Some(first) = parent_wlps.next() {
-                let parent_wlp = parent_wlps.fold(first, |acc, next| {
+                parent_wlps.fold(first, |acc, next| {
                     GclPredicate::Disjunction(Box::new(acc), Box::new(next))
-                });
-
-                GclPredicate::Conjunction(Box::new(parent_wlp), Box::new(precondition))
+                })
             } else {
-                precondition
+                GclPredicate::default()
             };
 
             node_variables.insert(node_idx, common_assignments);

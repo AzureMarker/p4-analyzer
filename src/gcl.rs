@@ -84,8 +84,8 @@ impl Display for GclGraph {
         for (node, edges) in nodes {
             writeln!(
                 f,
-                "Node '{}'\n  pre_condition = {}\n  command = {}\n  jump = {:?}",
-                node.name, node.pre_condition, node.command, edges
+                "Node '{}'\n  command = {}\n  jump = {:?}",
+                node.name, node.command, edges
             )?;
         }
 
@@ -95,18 +95,13 @@ impl Display for GclGraph {
 
 #[derive(Debug)]
 pub struct GclNode {
-    pub pre_condition: GclPredicate,
     pub name: String,
     pub command: GclCommand,
 }
 
 impl Display for GclNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Node '{}'\nprecondition = {}\ncommand = {}",
-            self.name, self.pre_condition, self.command
-        )
+        write!(f, "Node '{}'\ncommand = {}", self.name, self.command)
     }
 }
 
@@ -123,6 +118,8 @@ pub enum GclCommand {
     Assignment(GclAssignment),
     Sequence(Box<GclCommand>, Box<GclCommand>),
     Assumption(GclPredicate),
+    /// Represents a bug in the program, ex. if an assert fails
+    Bug,
 }
 
 impl Display for GclCommand {
@@ -131,6 +128,7 @@ impl Display for GclCommand {
             GclCommand::Assignment(assignment) => Display::fmt(assignment, f),
             GclCommand::Sequence(cmd1, cmd2) => write!(f, "{}; {}", cmd1, cmd2),
             GclCommand::Assumption(pred) => write!(f, "assume({})", pred),
+            GclCommand::Bug => f.write_str("bug"),
         }
     }
 }
@@ -167,7 +165,7 @@ impl GclCommand {
             GclCommand::Sequence(left, right) => {
                 Box::new(left.get_assignments().chain(right.get_assignments()))
             }
-            GclCommand::Assumption(_) => Box::new(iter::empty()),
+            GclCommand::Assumption(_) | GclCommand::Bug => Box::new(iter::empty()),
         }
     }
 }
