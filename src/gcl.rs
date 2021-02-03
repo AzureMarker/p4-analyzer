@@ -90,7 +90,7 @@ impl Display for GclCommand {
             GclCommand::Assignment(assignment) => Display::fmt(assignment, f),
             GclCommand::Sequence(cmd1, cmd2) => {
                 if f.alternate() {
-                    write!(f, "{};\n{}", cmd1, cmd2)
+                    write!(f, "{:#};\n{:#}", cmd1, cmd2)
                 } else {
                     write!(f, "{}; {}", cmd1, cmd2)
                 }
