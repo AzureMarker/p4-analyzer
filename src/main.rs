@@ -38,7 +38,6 @@ fn main() {
     let _gcl_start_node = p4_program.to_gcl(&mut graph);
 
     // Calculate the weakest liberal precondition for each node
-    println!("Weakest Liberal Preconditions:");
     let node_wlp = graph.to_wlp();
     display_wlp(&graph, &node_wlp);
 
@@ -51,6 +50,7 @@ fn main() {
 }
 
 fn display_wlp(graph: &GclGraph, node_wlp: &HashMap<NodeIndex, GclPredicate>) {
+    println!("Weakest Liberal Preconditions:");
     for (node_idx, wlp) in node_wlp {
         let node_name = &graph.node_weight(*node_idx).unwrap().name;
 
