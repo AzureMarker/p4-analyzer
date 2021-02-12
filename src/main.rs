@@ -35,7 +35,7 @@ fn main() {
 
     // Convert to GCL
     let mut graph = GclGraph::new();
-    let _gcl_start_node = p4_program.to_gcl(&mut graph);
+    let gcl_start_node = p4_program.to_gcl(&mut graph);
 
     // Calculate the weakest liberal precondition for each node
     let node_wlp = graph.to_wlp();
@@ -49,7 +49,7 @@ fn main() {
     println!("\n{}", graphviz);
 
     // Show all reachable bugs
-    display_bugs(&graph, &is_reachable);
+    display_bugs(&graph, &is_reachable, gcl_start_node);
 }
 
 fn display_wlp(graph: &GclGraph, node_wlp: &HashMap<NodeIndex, GclPredicate>) {
@@ -100,14 +100,24 @@ fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> S
     graphviz_graph.to_string()
 }
 
-fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) {
+fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>, start_idx: NodeIndex) {
     for node_idx in graph.node_indices() {
         let node = graph.node_weight(node_idx).unwrap();
 
         if matches!(node.command, GclCommand::Bug) && *is_reachable.get(&node_idx).unwrap() {
-            println!("Found bug: {:?}", node);
+            let path = path_to(graph, start_idx, node_idx).map(|path| {
+                // Get the name of each node
+                path.into_iter()
+                    .map(|node_idx| graph.node_weight(node_idx).unwrap().name.as_str())
+                    .collect::<Vec<_>>()
+            });
+            println!("Found bug: {:?}\nPath = {:?}", node, path);
         }
     }
+}
+
+fn path_to(graph: &GclGraph, start_idx: NodeIndex, node_idx: NodeIndex) -> Option<Vec<NodeIndex>> {
+    petgraph::algo::all_simple_paths(graph.deref(), start_idx, node_idx, 1, None).next()
 }
 
 /// Parse the P4 program. If there are errors during parsing, the program will

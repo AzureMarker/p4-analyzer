@@ -24,13 +24,14 @@ impl ToGcl for Program {
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let mut commands = Vec::new();
+        let mut control_idx = None;
 
         for decl in &self.declarations {
             match decl {
                 Declaration::Constant(const_decl) => commands.push(const_decl.to_gcl(graph)),
                 // The nodes are added to the graph automatically
                 Declaration::Control(control) => {
-                    control.to_gcl(graph);
+                    control_idx = Some(control.to_gcl(graph).start);
                 }
                 Declaration::Instantiation(instantiation) => {
                     commands.push(instantiation.to_gcl(graph))
@@ -38,10 +39,18 @@ impl ToGcl for Program {
             }
         }
 
-        graph.add_node(GclNode {
+        let start_idx = graph.add_node(GclNode {
             name: "start".to_string(),
             command: commands.flatten(),
-        })
+        });
+
+        // FIXME: This is a hard-coded way of connecting start to the control
+        //        block. Instead, we should find the main decl and use that info.
+        if let Some(idx) = control_idx {
+            graph.add_edge(start_idx, idx, GclPredicate::default());
+        }
+
+        start_idx
 
         // TODO: Parse the main decl and create driver GCL
 
