@@ -3,7 +3,7 @@ extern crate lalrpop_util;
 
 use crate::ast::Program;
 use crate::convert::ToGcl;
-use crate::gcl::{GclGraph, GclPredicate};
+use crate::gcl::{GclCommand, GclGraph, GclPredicate};
 use lalrpop_util::ParseError;
 use petgraph::dot::Dot;
 use petgraph::graph::NodeIndex;
@@ -47,6 +47,9 @@ fn main() {
     // Print out the graphviz representation
     let graphviz = make_graphviz(&graph, &is_reachable);
     println!("\n{}", graphviz);
+
+    // Show all reachable bugs
+    display_bugs(&graph, &is_reachable);
 }
 
 fn display_wlp(graph: &GclGraph, node_wlp: &HashMap<NodeIndex, GclPredicate>) {
@@ -95,6 +98,16 @@ fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> S
     );
 
     graphviz_graph.to_string()
+}
+
+fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) {
+    for node_idx in graph.node_indices() {
+        let node = graph.node_weight(node_idx).unwrap();
+
+        if matches!(node.command, GclCommand::Bug) && *is_reachable.get(&node_idx).unwrap() {
+            println!("Found bug: {:?}", node);
+        }
+    }
 }
 
 /// Parse the P4 program. If there are errors during parsing, the program will
