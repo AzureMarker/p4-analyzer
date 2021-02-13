@@ -71,8 +71,7 @@ pub enum Statement {
     Block(BlockStatement),
     If(IfStatement),
     Assignment(Assignment),
-    // MethodCall(MethodCall),
-    // actions, tables, apply block
+    FunctionCall(FunctionCall),
 }
 
 #[derive(Clone, Debug)]
@@ -103,8 +102,8 @@ pub struct Assignment {
     pub value: Expr,
 }
 
-#[derive(Debug)]
-pub struct MethodCall {
+#[derive(Clone, Debug)]
+pub struct FunctionCall {
     pub name: String,
     pub arguments: Vec<Argument>,
 }
@@ -123,5 +122,5 @@ pub enum Expr {
     And(Box<Expr>, Box<Expr>),
     Or(Box<Expr>, Box<Expr>),
     Negation(Box<Expr>),
-    FunctionCall { target: String, args: Vec<Argument> },
+    FunctionCall(FunctionCall),
 }

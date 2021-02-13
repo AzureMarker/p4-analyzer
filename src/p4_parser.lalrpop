@@ -38,7 +38,10 @@ Statement: Statement = {
     BlockStatement => Statement::Block(<>),
     IfStatement => Statement::If(<>),
     Assignment => Statement::Assignment(<>),
-//    MethodCall => Statement::MethodCall(<>)
+// FIXME: Uncommenting this statement causes a parsing ambiguity. The fix seems
+//        to be writing a custom lexer, according to
+//        https://p4.org/p4-spec/docs/P4-16-v1.2.1.html#sec-grammar
+//    FunctionCall => Statement::FunctionCall(<>)
 };
 
 StatementOrDecl: StatementOrDecl = {
@@ -63,8 +66,8 @@ ConstantDecl: ConstantDecl = "const" <ty:TypeRef> <name:Identifier> "=" <value:E
 Assignment: Assignment = <name:Identifier> "=" <value:Expr> ";"
     => Assignment { name, value };
 
-MethodCall: MethodCall = <name:Identifier> "(" <arguments:Comma<Argument>> ")"
-    => MethodCall { name, arguments };
+FunctionCall: FunctionCall = <name:Identifier> "(" <arguments:Comma<Argument>> ")" ";"
+    => FunctionCall { name, arguments };
 
 IfStatement: IfStatement = {
     // To avoid ambiguity, only allow block statements in then/else
@@ -82,7 +85,8 @@ Expr: Expr = {
     #[precedence(level = "1")]
     "!" <Expr> => Expr::Negation(Box::new(<>)),
     #[precedence(level = "1")]
-    <target:Identifier> "(" <args:Comma<Argument>> ")" => Expr::FunctionCall { target, args },
+    <name:Identifier> "(" <arguments:Comma<Argument>> ")"
+        => Expr::FunctionCall(FunctionCall { name, arguments }),
 
     #[precedence(level = "2")]
     #[assoc(side = "left")]

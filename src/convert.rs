@@ -2,8 +2,8 @@
 
 use crate::ast::{
     ActionDecl, Argument, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
-    Declaration, Expr, IfStatement, Instantiation, Program, Statement, StatementOrDecl,
-    VariableDecl,
+    Declaration, Expr, FunctionCall, IfStatement, Instantiation, Program, Statement,
+    StatementOrDecl, VariableDecl,
 };
 use crate::gcl::{
     Flatten, GclAssignment, GclCommand, GclGraph, GclNode, GclNodeRange, GclPredicate,
@@ -287,6 +287,7 @@ impl ToGcl for Statement {
             Statement::Block(block) => block.to_gcl(graph),
             Statement::If(if_statement) => if_statement.to_gcl(graph),
             Statement::Assignment(assignment) => assignment.to_gcl(graph),
+            Statement::FunctionCall(func_call) => func_call.to_gcl(graph),
         }
     }
 }
@@ -490,46 +491,24 @@ impl ToGcl for Expr {
                     },
                 )
             }
-            Expr::FunctionCall { target, .. } => {
-                // TODO: handle setting arguments
-                let function_range = graph
-                    .get_function(target)
-                    .unwrap_or_else(|| panic!("Unable to find function {}", target));
+            Expr::FunctionCall(func_call) => {
+                let func_range = func_call.to_gcl(graph);
                 let name = graph.create_name("expr");
-
-                let start_name = graph.create_name("func_call_start");
-                let end_name = graph.create_name("func_call_end");
-                let ret_target_var = format!("func_ret_target__{}", target);
-                let start_idx = graph.add_node(GclNode {
-                    name: start_name,
-                    command: GclCommand::Assignment(GclAssignment {
-                        name: ret_target_var.clone(),
-                        pred: GclPredicate::String(end_name.clone()),
-                    }),
-                });
-                let end_idx = graph.add_node(GclNode {
-                    name: end_name.clone(),
+                let node = GclNode {
+                    name: graph.create_name("expr_func"),
                     command: GclCommand::Assignment(GclAssignment {
                         name: name.clone(),
                         pred: GclPredicate::Var("ret".to_string()),
                     }),
-                });
-
-                graph.add_edge(start_idx, function_range.start, GclPredicate::default());
-                graph.add_edge(
-                    function_range.end,
-                    end_idx,
-                    GclPredicate::Equality(
-                        Box::new(GclPredicate::StringVar(ret_target_var)),
-                        Box::new(GclPredicate::String(end_name)),
-                    ),
-                );
+                };
+                let node_idx = graph.add_node(node);
+                graph.add_edge(func_range.end, node_idx, GclPredicate::default());
 
                 (
                     GclPredicate::Var(name),
                     GclNodeRange {
-                        start: start_idx,
-                        end: end_idx,
+                        start: func_range.start,
+                        end: node_idx,
                     },
                 )
             }
@@ -550,7 +529,7 @@ impl Expr {
             }
             Expr::Negation(inner) => inner.find_all_vars(),
             // TODO: should the target function variable be included here?
-            Expr::FunctionCall { args, .. } => args
+            Expr::FunctionCall(FunctionCall { arguments, .. }) => arguments
                 .iter()
                 .flat_map(|arg| match arg {
                     Argument::Value(value) => value.find_all_vars(),
@@ -641,6 +620,47 @@ impl Expr {
                 end: end_node_idx,
             },
         )
+    }
+}
+
+impl ToGcl for FunctionCall {
+    type Output = GclNodeRange;
+
+    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+        // TODO: handle setting arguments
+        let function_range = graph
+            .get_function(&self.name)
+            .unwrap_or_else(|| panic!("Unable to find function {}", self.name));
+
+        let start_name = graph.create_name("func_call_start");
+        let end_name = graph.create_name("func_call_end");
+        let ret_target_var = format!("func_ret_target__{}", self.name);
+        let start_idx = graph.add_node(GclNode {
+            name: start_name,
+            command: GclCommand::Assignment(GclAssignment {
+                name: ret_target_var.clone(),
+                pred: GclPredicate::String(end_name.clone()),
+            }),
+        });
+        let end_idx = graph.add_node(GclNode {
+            name: end_name.clone(),
+            command: GclCommand::Skip,
+        });
+
+        graph.add_edge(start_idx, function_range.start, GclPredicate::default());
+        graph.add_edge(
+            function_range.end,
+            end_idx,
+            GclPredicate::Equality(
+                Box::new(GclPredicate::StringVar(ret_target_var)),
+                Box::new(GclPredicate::String(end_name)),
+            ),
+        );
+
+        GclNodeRange {
+            start: start_idx,
+            end: end_idx,
+        }
     }
 }
 
