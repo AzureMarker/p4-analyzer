@@ -393,14 +393,6 @@ impl ToGcl for IfStatement {
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        // Make sure that all the variables read by this conditional have a value
-        let vars = self.condition.find_all_vars();
-        let var_predicates: Vec<_> = vars
-            .into_iter()
-            .map(|var| GclPredicate::Var(format!("_has_value__{}", var)))
-            .collect();
-        let var_value_check_gcl = var_predicates.flatten();
-
         // Create the end node first so we can refer to its index
         let end_node = GclNode {
             name: graph.create_name("if_end"),
@@ -428,9 +420,6 @@ impl ToGcl for IfStatement {
         graph.add_edge(cond_range.end, then_node_start, pred);
         graph.add_edge(cond_range.end, else_node_idx, negated_pred);
 
-        // Create the assertion node
-        let assert_node_idx = make_assert_node(graph, var_value_check_gcl, cond_range.start);
-
         // Add edges to the end node from then and else branches
         graph.add_edge(then_node_end, end_node_idx, GclPredicate::default());
         if let Some(else_range) = else_node_range {
@@ -438,7 +427,7 @@ impl ToGcl for IfStatement {
         }
 
         GclNodeRange {
-            start: assert_node_idx,
+            start: cond_range.start,
             end: end_node_idx,
         }
     }
@@ -451,8 +440,34 @@ impl ToGcl for Expr {
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
-            Expr::Bool(b) => Self::single_assignment_node(graph, GclPredicate::Bool(*b)),
-            Expr::Var(name) => Self::single_assignment_node(graph, GclPredicate::Var(name.clone())),
+            Expr::Bool(b) => {
+                let (name, node_idx) = Self::single_assignment_node(graph, GclPredicate::Bool(*b));
+
+                (
+                    GclPredicate::Var(name),
+                    GclNodeRange {
+                        start: node_idx,
+                        end: node_idx,
+                    },
+                )
+            }
+            Expr::Var(name) => {
+                let (expr_name, node_idx) =
+                    Self::single_assignment_node(graph, GclPredicate::Var(name.clone()));
+                let assert_idx = make_assert_node(
+                    graph,
+                    GclPredicate::Var(format!("_has_value__{}", name)),
+                    node_idx,
+                );
+
+                (
+                    GclPredicate::Var(expr_name),
+                    GclNodeRange {
+                        start: assert_idx,
+                        end: node_idx,
+                    },
+                )
+            }
             Expr::And(left, right) => Self::short_circuit_logic(graph, left, right, true),
             Expr::Or(left, right) => Self::short_circuit_logic(graph, left, right, false),
             Expr::Negation(inner) => {
@@ -547,10 +562,7 @@ impl Expr {
     }
 
     /// Create a node which just assigns a predicate to a variable
-    fn single_assignment_node(
-        graph: &mut GclGraph,
-        value: GclPredicate,
-    ) -> (GclPredicate, GclNodeRange) {
+    fn single_assignment_node(graph: &mut GclGraph, value: GclPredicate) -> (String, NodeIndex) {
         let name = graph.create_name("expr");
         let node_idx = graph.add_node(GclNode {
             name: name.clone(),
@@ -560,13 +572,7 @@ impl Expr {
             }),
         });
 
-        (
-            GclPredicate::Var(name),
-            GclNodeRange {
-                start: node_idx,
-                end: node_idx,
-            },
-        )
+        (name, node_idx)
     }
 
     /// The logic for short-circuiting && and || is very similar, so the
