@@ -101,10 +101,13 @@ fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> S
 }
 
 fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>, start_idx: NodeIndex) {
+    let mut found_bug = false;
+
     for node_idx in graph.node_indices() {
         let node = graph.node_weight(node_idx).unwrap();
 
         if matches!(node.command, GclCommand::Bug) && *is_reachable.get(&node_idx).unwrap() {
+            found_bug = true;
             let path = path_to(graph, start_idx, node_idx).map(|path| {
                 // Get the name of each node
                 path.into_iter()
@@ -113,6 +116,10 @@ fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>, start
             });
             println!("Found bug: {:?}\nPath = {:?}", node, path);
         }
+    }
+
+    if !found_bug {
+        println!("No bugs found!");
     }
 }
 
