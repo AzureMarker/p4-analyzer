@@ -23,12 +23,26 @@ impl ToGcl for Program {
     type Output = NodeIndex;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+        let start_idx = graph.add_node(GclNode {
+            name: "start".to_string(),
+            command: GclCommand::default(),
+        });
+
         let mut commands = Vec::new();
+        let mut node_range = GclNodeRange {
+            start: start_idx,
+            end: start_idx,
+        };
         let mut control_idx = None;
 
         for decl in &self.declarations {
             match decl {
-                Declaration::Constant(const_decl) => commands.push(const_decl.to_gcl(graph)),
+                Declaration::Constant(const_decl) => {
+                    // Add onto the node chain
+                    let range = const_decl.to_gcl(graph);
+                    graph.add_edge(node_range.end, range.start, GclPredicate::default());
+                    node_range.end = range.end;
+                }
                 // The nodes are added to the graph automatically
                 Declaration::Control(control) => {
                     control_idx = Some(control.to_gcl(graph).start);
@@ -39,13 +53,28 @@ impl ToGcl for Program {
             }
         }
 
-        let start_idx = graph.add_node(GclNode {
-            name: "start".to_string(),
-            command: commands.flatten(),
-        });
+        graph.node_weight_mut(start_idx).unwrap().command = commands.flatten();
+
+        let main_decl = self
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                Declaration::Instantiation(instantiation) if instantiation.name == "main" => {
+                    Some(instantiation)
+                }
+                _ => None,
+            })
+            .expect("Missing main declaration");
+
+        if main_decl.ty != "V1Switch" {
+            panic!(
+                "Expected type of main to be 'V1Switch', got '{}'",
+                main_decl.ty
+            );
+        }
 
         // FIXME: This is a hard-coded way of connecting start to the control
-        //        block. Instead, we should find the main decl and use that info.
+        //        block. Instead, we should parse the main decl and use that info.
         if let Some(idx) = control_idx {
             graph.add_edge(start_idx, idx, GclPredicate::default());
         }
@@ -53,24 +82,8 @@ impl ToGcl for Program {
         start_idx
 
         // TODO: Parse the main decl and create driver GCL
-
-        // self.declarations
-        //     .iter()
-        //     .flat_map(Declaration::to_gcl)
-        //     .collect()
     }
 }
-
-// impl ToGcl for Declaration {
-//     type Output = Either<GclCommand, (String, String)>;
-//
-//     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-//         match self {
-//             Declaration::Control(control) => Either::Right(control.to_gcl(graph)),
-//             Declaration::Constant(const_decl) => Either::Left(const_decl.to_gcl(graph)),
-//         }
-//     }
-// }
 
 impl ToGcl for ControlDecl {
     type Output = GclNodeRange;
@@ -117,19 +130,31 @@ impl ToGcl for ControlDecl {
 }
 
 impl ToGcl for ConstantDecl {
-    type Output = GclCommand;
+    type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        GclCommand::Sequence(
-            Box::new(GclCommand::Assignment(GclAssignment {
-                name: format!("_has_value__{}", self.name),
-                pred: GclPredicate::Bool(true),
-            })),
-            Box::new(GclCommand::Assignment(GclAssignment {
-                name: self.name.clone(),
-                pred: self.value.to_gcl(graph),
-            })),
-        )
+        let (pred, expr_range) = self.value.to_gcl(graph);
+        let name = graph.create_name(&format!("const_decl__{}", self.name));
+
+        let node_idx = graph.add_node(GclNode {
+            name,
+            command: GclCommand::Sequence(
+                Box::new(GclCommand::Assignment(GclAssignment {
+                    name: format!("_has_value__{}", self.name),
+                    pred: GclPredicate::Bool(true),
+                })),
+                Box::new(GclCommand::Assignment(GclAssignment {
+                    name: self.name.clone(),
+                    pred,
+                })),
+            ),
+        });
+        graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
+
+        GclNodeRange {
+            start: expr_range.start,
+            end: node_idx,
+        }
     }
 }
 
@@ -239,8 +264,8 @@ impl ToGcl for StatementOrDecl {
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
             StatementOrDecl::Statement(statement) => Either::Right(statement.to_gcl(graph)),
-            StatementOrDecl::VariableDecl(var_decl) => Either::Left(var_decl.to_gcl(graph)),
-            StatementOrDecl::ConstantDecl(const_decl) => Either::Left(const_decl.to_gcl(graph)),
+            StatementOrDecl::VariableDecl(var_decl) => Either::Right(var_decl.to_gcl(graph)),
+            StatementOrDecl::ConstantDecl(const_decl) => Either::Right(const_decl.to_gcl(graph)),
             StatementOrDecl::Instantiation(instantiation) => {
                 Either::Left(instantiation.to_gcl(graph))
             }
@@ -261,7 +286,7 @@ impl ToGcl for Statement {
 }
 
 impl ToGcl for VariableDecl {
-    type Output = GclCommand;
+    type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let has_decl_command = GclCommand::Assignment(GclAssignment {
@@ -274,16 +299,40 @@ impl ToGcl for VariableDecl {
         });
         let ghost_variables =
             GclCommand::Sequence(Box::new(has_decl_command), Box::new(has_value_command));
+        let name = graph.create_name(&format!("var_decl__{}", self.name));
 
         match self.value.as_ref() {
-            Some(value) => GclCommand::Sequence(
-                Box::new(ghost_variables),
-                Box::new(GclCommand::Assignment(GclAssignment {
-                    name: self.name.clone(),
-                    pred: value.to_gcl(graph),
-                })),
-            ),
-            None => ghost_variables,
+            Some(value) => {
+                let (pred, expr_range) = value.to_gcl(graph);
+
+                let node_idx = graph.add_node(GclNode {
+                    name,
+                    command: GclCommand::Sequence(
+                        Box::new(ghost_variables),
+                        Box::new(GclCommand::Assignment(GclAssignment {
+                            name: self.name.clone(),
+                            pred,
+                        })),
+                    ),
+                });
+                graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
+
+                GclNodeRange {
+                    start: expr_range.start,
+                    end: node_idx,
+                }
+            }
+            None => {
+                let node_idx = graph.add_node(GclNode {
+                    name,
+                    command: ghost_variables,
+                });
+
+                GclNodeRange {
+                    start: node_idx,
+                    end: node_idx,
+                }
+            }
         }
     }
 }
@@ -304,6 +353,7 @@ impl ToGcl for Assignment {
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+        let (pred, expr_range) = self.value.to_gcl(graph);
         let node = GclNode {
             name: graph.create_name(&format!("assignment__{}", self.name)),
             command: GclCommand::Sequence(
@@ -313,16 +363,17 @@ impl ToGcl for Assignment {
                 })),
                 Box::new(GclCommand::Assignment(GclAssignment {
                     name: self.name.clone(),
-                    pred: self.value.to_gcl(graph),
+                    pred,
                 })),
             ),
         };
         let node_idx = graph.add_node(node);
+        graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
 
         let assert_node_idx = make_assert_node(
             graph,
             GclPredicate::Var(format!("_declared_var__{}", self.name)),
-            node_idx,
+            expr_range.start,
         );
 
         GclNodeRange {
@@ -351,8 +402,8 @@ impl ToGcl for IfStatement {
         };
         let end_node_idx = graph.add_node(end_node);
 
-        // Calculate the if condition predicates
-        let pred = self.condition.to_gcl(graph);
+        // Calculate the if condition predicate and nodes
+        let (pred, cond_range) = self.condition.to_gcl(graph);
         let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
 
         // Convert the then and else branches to GCL
@@ -367,17 +418,12 @@ impl ToGcl for IfStatement {
             end_node_idx
         };
 
-        // Create the jump (start) node
-        let jump_node = GclNode {
-            name: graph.create_name("if_jump"),
-            command: GclCommand::default(),
-        };
-        let jump_node_idx = graph.add_node(jump_node);
-        graph.add_edge(jump_node_idx, then_node_start, pred);
-        graph.add_edge(jump_node_idx, else_node_idx, negated_pred);
+        // Connect the condition nodes to the then & else cases
+        graph.add_edge(cond_range.end, then_node_start, pred);
+        graph.add_edge(cond_range.end, else_node_idx, negated_pred);
 
         // Create the assertion node
-        let assert_node_idx = make_assert_node(graph, var_value_check_gcl, jump_node_idx);
+        let assert_node_idx = make_assert_node(graph, var_value_check_gcl, cond_range.start);
 
         // Add edges to the end node from then and else branches
         graph.add_edge(then_node_end, end_node_idx, GclPredicate::default());
@@ -393,21 +439,36 @@ impl ToGcl for IfStatement {
 }
 
 impl ToGcl for Expr {
-    type Output = GclPredicate;
+    /// The predicate which holds the boolean value of the expression, plus the
+    /// nodes that calculate the predicate.
+    type Output = (GclPredicate, GclNodeRange);
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         match self {
-            Expr::Bool(b) => GclPredicate::Bool(*b),
-            Expr::Var(name) => GclPredicate::Var(name.clone()),
-            Expr::And(left, right) => GclPredicate::Conjunction(
-                Box::new(left.to_gcl(graph)),
-                Box::new(right.to_gcl(graph)),
-            ),
-            Expr::Or(left, right) => GclPredicate::Disjunction(
-                Box::new(left.to_gcl(graph)),
-                Box::new(right.to_gcl(graph)),
-            ),
-            Expr::Negation(inner) => GclPredicate::Negation(Box::new(inner.to_gcl(graph))),
+            Expr::Bool(b) => Self::single_assignment_node(graph, GclPredicate::Bool(*b)),
+            Expr::Var(name) => Self::single_assignment_node(graph, GclPredicate::Var(name.clone())),
+            Expr::And(left, right) => Self::short_circuit_logic(graph, left, right, true),
+            Expr::Or(left, right) => Self::short_circuit_logic(graph, left, right, false),
+            Expr::Negation(inner) => {
+                let (inner_pred, inner_range) = inner.to_gcl(graph);
+                let name = graph.create_name("expr");
+                let node_idx = graph.add_node(GclNode {
+                    name: name.clone(),
+                    command: GclCommand::Assignment(GclAssignment {
+                        name: name.clone(),
+                        pred: GclPredicate::Negation(Box::new(inner_pred)),
+                    }),
+                });
+                graph.add_edge(inner_range.end, node_idx, GclPredicate::default());
+
+                (
+                    GclPredicate::Var(name),
+                    GclNodeRange {
+                        start: inner_range.start,
+                        end: node_idx,
+                    },
+                )
+            }
         }
     }
 }
@@ -425,6 +486,97 @@ impl Expr {
             }
             Expr::Negation(inner) => inner.find_all_vars(),
         }
+    }
+
+    /// Create a node which just assigns a predicate to a variable
+    fn single_assignment_node(
+        graph: &mut GclGraph,
+        value: GclPredicate,
+    ) -> (GclPredicate, GclNodeRange) {
+        let name = graph.create_name("expr");
+        let node_idx = graph.add_node(GclNode {
+            name: name.clone(),
+            command: GclCommand::Assignment(GclAssignment {
+                name: name.clone(),
+                pred: value,
+            }),
+        });
+
+        (
+            GclPredicate::Var(name),
+            GclNodeRange {
+                start: node_idx,
+                end: node_idx,
+            },
+        )
+    }
+
+    /// The logic for short-circuiting && and || is very similar, so the
+    /// implementations are generalized by this function.
+    fn short_circuit_logic(
+        graph: &mut GclGraph,
+        left: &Expr,
+        right: &Expr,
+        is_add: bool,
+    ) -> (GclPredicate, GclNodeRange) {
+        let (left_pred, left_range) = left.to_gcl(graph);
+        let (right_pred, right_range) = right.to_gcl(graph);
+        let name = graph.create_name("expr");
+        let op_name = if is_add { "add" } else { "or" };
+
+        let true_node = GclNode {
+            name: graph.create_name(&format!("{}_expr_true", op_name)),
+            command: GclCommand::Assignment(GclAssignment {
+                name: name.clone(),
+                pred: GclPredicate::Bool(true),
+            }),
+        };
+        let false_node = GclNode {
+            name: graph.create_name(&format!("{}_expr_false", op_name)),
+            command: GclCommand::Assignment(GclAssignment {
+                name: name.clone(),
+                pred: GclPredicate::Bool(false),
+            }),
+        };
+        let end_node = GclNode {
+            name: graph.create_name(&format!("{}_expr_end", op_name)),
+            command: GclCommand::Skip,
+        };
+
+        let true_node_idx = graph.add_node(true_node);
+        let false_node_idx = graph.add_node(false_node);
+        let end_node_idx = graph.add_node(end_node);
+        let left_pred_negated = GclPredicate::Negation(Box::new(left_pred.clone()));
+        let right_pred_negated = GclPredicate::Negation(Box::new(right_pred.clone()));
+
+        let (left_to_right, left_to_set) = if is_add {
+            (left_pred, left_pred_negated)
+        } else {
+            (left_pred_negated, left_pred)
+        };
+
+        graph.add_edge(left_range.end, right_range.start, left_to_right);
+        graph.add_edge(
+            left_range.end,
+            if is_add {
+                false_node_idx
+            } else {
+                true_node_idx
+            },
+            left_to_set,
+        );
+        graph.add_edge(right_range.end, true_node_idx, right_pred);
+        graph.add_edge(right_range.end, false_node_idx, right_pred_negated);
+        graph.add_edge(true_node_idx, end_node_idx, GclPredicate::default());
+        graph.add_edge(false_node_idx, end_node_idx, GclPredicate::default());
+
+        (
+            GclPredicate::Var(name),
+            GclNodeRange {
+                start: left_range.start,
+                end: end_node_idx,
+            },
+        )
     }
 }
 
