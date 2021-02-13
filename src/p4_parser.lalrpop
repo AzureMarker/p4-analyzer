@@ -81,6 +81,8 @@ Expr: Expr = {
     "(" <Expr> ")",
     #[precedence(level = "1")]
     "!" <Expr> => Expr::Negation(Box::new(<>)),
+    #[precedence(level = "1")]
+    <target:Identifier> "(" <args:Comma<Argument>> ")" => Expr::FunctionCall { target, args },
 
     #[precedence(level = "2")]
     #[assoc(side = "left")]

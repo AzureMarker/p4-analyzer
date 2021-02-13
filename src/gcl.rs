@@ -145,7 +145,9 @@ pub enum GclPredicate {
     Implication(Box<GclPredicate>, Box<GclPredicate>),
     Negation(Box<GclPredicate>),
     Bool(bool),
+    String(String),
     Var(String),
+    StringVar(String),
 }
 
 impl Display for GclPredicate {
@@ -157,7 +159,8 @@ impl Display for GclPredicate {
             GclPredicate::Implication(p1, p2) => write!(f, "({}) => ({})", p1, p2),
             GclPredicate::Negation(pred) => write!(f, "!({})", pred),
             GclPredicate::Bool(e) => Display::fmt(e, f),
-            GclPredicate::Var(name) => f.write_str(&name),
+            GclPredicate::String(s) => Debug::fmt(s, f),
+            GclPredicate::Var(name) | GclPredicate::StringVar(name) => f.write_str(&name),
         }
     }
 }
@@ -184,8 +187,8 @@ impl GclPredicate {
     /// Get all of the variables this expression reads from
     pub fn find_all_vars(&self) -> Vec<String> {
         match self {
-            GclPredicate::Bool(_) => Vec::new(),
-            GclPredicate::Var(name) => vec![name.clone()],
+            GclPredicate::Bool(_) | GclPredicate::String(_) => Vec::new(),
+            GclPredicate::Var(name) | GclPredicate::StringVar(name) => vec![name.clone()],
             GclPredicate::Negation(inner) => inner.find_all_vars(),
             GclPredicate::Conjunction(left, right)
             | GclPredicate::Disjunction(left, right)

@@ -80,8 +80,8 @@ impl GclPredicate {
                 right.replace_var(var, value);
             }
             GclPredicate::Negation(inner) => inner.replace_var(var, value),
-            GclPredicate::Bool(_) => {}
-            GclPredicate::Var(name) => {
+            GclPredicate::Bool(_) | GclPredicate::String(_) => {}
+            GclPredicate::Var(name) | GclPredicate::StringVar(name) => {
                 if name == var {
                     *self = value.clone();
                 }

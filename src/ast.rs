@@ -123,4 +123,5 @@ pub enum Expr {
     And(Box<Expr>, Box<Expr>),
     Or(Box<Expr>, Box<Expr>),
     Negation(Box<Expr>),
+    FunctionCall { target: String, args: Vec<Argument> },
 }

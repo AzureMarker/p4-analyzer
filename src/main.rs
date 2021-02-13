@@ -73,7 +73,7 @@ fn calculate_reachable(
         .node_indices()
         .map(|node_idx| {
             let wlp = node_wlp.get(&node_idx).unwrap();
-            solver.assert(&wlp.as_z3_bool(&context));
+            solver.assert(&wlp.as_z3_ast(&context).as_bool().unwrap());
             let is_reachable = solver.check() == SatResult::Sat;
             solver.reset();
 

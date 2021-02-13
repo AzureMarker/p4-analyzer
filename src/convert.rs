@@ -1,7 +1,7 @@
 //! Convert P4 to GCL
 
 use crate::ast::{
-    ActionDecl, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
+    ActionDecl, Argument, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
     Declaration, Expr, IfStatement, Instantiation, Program, Statement, StatementOrDecl,
     VariableDecl,
 };
@@ -109,7 +109,9 @@ impl ToGcl for ControlDecl {
 
                     // Register the action under the namespace of this control block
                     graph.register_function(
-                        format!("{}::{}", self.name, action_decl.name),
+                        // FIXME: Check if we actually need namespacing
+                        // format!("{}::{}", self.name, action_decl.name),
+                        action_decl.name.clone(),
                         action_range,
                     );
                 }
@@ -165,7 +167,11 @@ impl ToGcl for ActionDecl {
         let body_range = self.body.to_gcl(graph);
         let start_node_idx = graph.add_node(GclNode {
             name: format!("action__{}", self.name),
-            command: GclCommand::default(),
+            // FIXME: remove ret hack
+            command: GclCommand::Assignment(GclAssignment {
+                name: "ret".to_string(),
+                pred: GclPredicate::Bool(true),
+            }),
         });
         graph.add_edge(start_node_idx, body_range.start, GclPredicate::default());
 
@@ -469,6 +475,49 @@ impl ToGcl for Expr {
                     },
                 )
             }
+            Expr::FunctionCall { target, .. } => {
+                // TODO: handle setting arguments
+                let function_range = graph
+                    .get_function(target)
+                    .unwrap_or_else(|| panic!("Unable to find function {}", target));
+                let name = graph.create_name("expr");
+
+                let start_name = graph.create_name("func_call_start");
+                let end_name = graph.create_name("func_call_end");
+                let ret_target_var = format!("func_ret_target__{}", target);
+                let start_idx = graph.add_node(GclNode {
+                    name: start_name,
+                    command: GclCommand::Assignment(GclAssignment {
+                        name: ret_target_var.clone(),
+                        pred: GclPredicate::String(end_name.clone()),
+                    }),
+                });
+                let end_idx = graph.add_node(GclNode {
+                    name: end_name.clone(),
+                    command: GclCommand::Assignment(GclAssignment {
+                        name: name.clone(),
+                        pred: GclPredicate::Var("ret".to_string()),
+                    }),
+                });
+
+                graph.add_edge(start_idx, function_range.start, GclPredicate::default());
+                graph.add_edge(
+                    function_range.end,
+                    end_idx,
+                    GclPredicate::Equality(
+                        Box::new(GclPredicate::StringVar(ret_target_var)),
+                        Box::new(GclPredicate::String(end_name)),
+                    ),
+                );
+
+                (
+                    GclPredicate::Var(name),
+                    GclNodeRange {
+                        start: start_idx,
+                        end: end_idx,
+                    },
+                )
+            }
         }
     }
 }
@@ -485,6 +534,15 @@ impl Expr {
                 vars
             }
             Expr::Negation(inner) => inner.find_all_vars(),
+            // TODO: should the target function variable be included here?
+            Expr::FunctionCall { args, .. } => args
+                .iter()
+                .flat_map(|arg| match arg {
+                    Argument::Value(value) => value.find_all_vars(),
+                    Argument::Named(_, value) => value.find_all_vars(),
+                    Argument::DontCare => Vec::new(),
+                })
+                .collect(),
         }
     }
 
