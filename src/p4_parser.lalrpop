@@ -73,20 +73,22 @@ IfStatement: IfStatement = {
 };
 
 Expr: Expr = {
-    <left:Expr> "||" <right:FactorExpr> => Expr::Or(Box::new(left), Box::new(right)),
-    FactorExpr
-};
-
-FactorExpr: Expr = {
-    <left:FactorExpr> "&&" <right:TerminalExpr> => Expr::And(Box::new(left), Box::new(right)),
-    "!" <TerminalExpr> => Expr::Negation(Box::new(<>)),
-    TerminalExpr
-};
-
-TerminalExpr: Expr = {
+    #[precedence(level = "1")]
     Bool => Expr::Bool(<>),
+    #[precedence(level = "1")]
     Identifier => Expr::Var(<>),
-    "(" <Expr> ")"
+    #[precedence(level = "1")]
+    "(" <Expr> ")",
+    #[precedence(level = "1")]
+    "!" <Expr> => Expr::Negation(Box::new(<>)),
+
+    #[precedence(level = "2")]
+    #[assoc(side = "left")]
+    <left:Expr> "&&" <right:Expr> => Expr::And(Box::new(left), Box::new(right)),
+
+    #[precedence(level = "3")]
+    #[assoc(side = "left")]
+    <left:Expr> "||" <right:Expr> => Expr::Or(Box::new(left), Box::new(right)),
 };
 
 Bool: bool = {
