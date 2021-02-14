@@ -9,6 +9,7 @@ use lalrpop_util::ParseError;
 use logos::Logos;
 use petgraph::dot::Dot;
 use petgraph::graph::NodeIndex;
+use petgraph::visit::IntoNodeReferences;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Read;
@@ -105,15 +106,19 @@ fn calculate_reachable(
     node_wlp: &HashMap<NodeIndex, GclPredicate>,
     only_bugs: bool,
 ) -> HashMap<NodeIndex, bool> {
+    // TODO: idea: go in reverse topological sort, propagate reachability
+    //       when the node is reachable and has a single parent (in-edge).
+    //       This would avoid unnecessary Z3 calls, but only in
+    //       full-reachability mode. This also may not be necessary if CFG
+    //       optimizations merge such nodes together.
+
     let config = Config::new();
     let context = Context::new(&config);
     let solver = Solver::new(&context);
 
     graph
-        .node_indices()
-        .filter_map(|node_idx| {
-            let node = graph.node_weight(node_idx).unwrap();
-
+        .node_references()
+        .filter_map(|(node_idx, node)| {
             if only_bugs && !matches!(node.command, GclCommand::Bug) {
                 return None;
             }
@@ -147,9 +152,7 @@ fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> S
 fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>, start_idx: NodeIndex) {
     let mut found_bug = false;
 
-    for node_idx in graph.node_indices() {
-        let node = graph.node_weight(node_idx).unwrap();
-
+    for (node_idx, node) in graph.node_references() {
         if matches!(node.command, GclCommand::Bug) && *is_reachable.get(&node_idx).unwrap_or(&false)
         {
             found_bug = true;
