@@ -84,11 +84,13 @@ fn main() {
         "\nTime to parse P4: {}ms\n\
          Time to convert to GCL: {}ms\n\
          Time to calculate WLP: {}ms\n\
-         Time to calculate reachability: {}ms",
+         Time to calculate reachability: {}ms\n\
+         Total time: {}ms",
         time_to_parse.as_millis(),
         time_to_gcl.as_millis(),
         time_to_wlp.as_millis(),
-        time_to_reachable.as_millis()
+        time_to_reachable.as_millis(),
+        parse_start.elapsed().as_millis()
     );
 }
 
