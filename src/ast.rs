@@ -1,5 +1,3 @@
-pub type TypeRef = String;
-
 #[derive(Debug)]
 pub struct Program {
     pub declarations: Vec<Declaration>,
@@ -7,9 +5,15 @@ pub struct Program {
 
 #[derive(Debug)]
 pub enum Declaration {
+    Struct(StructDecl),
     Control(ControlDecl),
     Constant(ConstantDecl),
     Instantiation(Instantiation),
+}
+
+#[derive(Debug)]
+pub struct StructDecl {
+    pub name: String,
 }
 
 #[derive(Debug)]
@@ -123,4 +127,16 @@ pub enum Expr {
     Or(Box<Expr>, Box<Expr>),
     Negation(Box<Expr>),
     FunctionCall(FunctionCall),
+}
+
+#[derive(Clone, Debug)]
+pub enum TypeRef {
+    Base(BaseType),
+    Identifier(String),
+}
+
+#[derive(Clone, Debug)]
+pub enum BaseType {
+    Bool,
+    // TODO: Add more base types
 }

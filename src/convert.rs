@@ -3,7 +3,7 @@
 use crate::ast::{
     ActionDecl, Argument, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
     Declaration, Expr, FunctionCall, IfStatement, Instantiation, Program, Statement,
-    StatementOrDecl, VariableDecl,
+    StatementOrDecl, TypeRef, VariableDecl,
 };
 use crate::gcl::{
     Flatten, GclAssignment, GclCommand, GclGraph, GclNode, GclNodeRange, GclPredicate,
@@ -37,6 +37,7 @@ impl ToGcl for Program {
 
         for decl in &self.declarations {
             match decl {
+                Declaration::Struct(_) => {} // todo
                 Declaration::Constant(const_decl) => {
                     // Add onto the node chain
                     let range = const_decl.to_gcl(graph);
@@ -66,9 +67,9 @@ impl ToGcl for Program {
             })
             .expect("Missing main declaration");
 
-        if main_decl.ty != "V1Switch" {
+        if !matches!(&main_decl.ty, TypeRef::Identifier(ident) if ident == "V1Switch") {
             panic!(
-                "Expected type of main to be 'V1Switch', got '{}'",
+                "Expected type of main to be 'V1Switch', got '{:?}'",
                 main_decl.ty
             );
         }

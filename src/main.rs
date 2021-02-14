@@ -4,10 +4,12 @@ extern crate lalrpop_util;
 use crate::ast::Program;
 use crate::convert::ToGcl;
 use crate::gcl::{GclCommand, GclGraph, GclPredicate};
+use crate::lexer::{LalrpopLexerIter, Token};
 use lalrpop_util::ParseError;
 use logos::Logos;
 use petgraph::dot::Dot;
 use petgraph::graph::NodeIndex;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Read;
 use std::ops::Deref;
@@ -132,9 +134,11 @@ fn path_to(graph: &GclGraph, start_idx: NodeIndex, node_idx: NodeIndex) -> Optio
 /// Parse the P4 program. If there are errors during parsing, the program will
 /// exit.
 fn parse(p4_program_str: &str) -> Program {
-    let lexer_iter = lexer::LalrpopLexerIter::new(lexer::Token::lexer(p4_program_str));
+    let lexer_state = RefCell::default();
+    let lexer = Token::lexer_with_extras(p4_program_str, &lexer_state);
+    let lexer_iter = LalrpopLexerIter::new(lexer);
 
-    match p4_parser::ProgramParser::new().parse(p4_program_str, lexer_iter) {
+    match p4_parser::ProgramParser::new().parse(p4_program_str, &lexer_state, lexer_iter) {
         Ok(parsed_ast) => {
             println!("{:#?}\n", parsed_ast);
             parsed_ast

@@ -1,21 +1,32 @@
 use crate::ast::*;
-use crate::lexer::Token;
+use crate::lexer::{Token, LexerState};
 use std::ops::Range;
 
-grammar<'input>(input: &'input str);
+grammar<'input>(input: &'input str, lexer_state: LexerState<'input>);
 
 pub Program: Program = Declaration* => Program { declarations: <> };
 
 Declaration: Declaration = {
+    StructDecl => Declaration::Struct(<>),
     ControlDecl => Declaration::Control(<>),
     ConstantDecl => Declaration::Constant(<>),
     Instantiation => Declaration::Instantiation(<>),
 };
 
+// TODO: support the full struct syntax
+// This is currently only used to introduce type names
+StructDecl: StructDecl = "struct" <name:Identifier> ";" => {
+    lexer_state.borrow_mut().insert(name.clone());
+    StructDecl { name }
+};
+
 ControlDecl: ControlDecl =
     "control" <name:Identifier> "(" <params:Comma<Param>> ")"
         "{" <local_decls:ControlLocalDecl*> "apply" <apply_body:BlockStatement> "}"
-    => ControlDecl { name, params, local_decls, apply_body };
+    => {
+        lexer_state.borrow_mut().insert(name.clone());
+        ControlDecl { name, params, local_decls, apply_body }
+    };
 
 ControlLocalDecl: ControlLocalDecl = {
     VariableDecl => ControlLocalDecl::Variable(<>),
@@ -40,10 +51,7 @@ Statement: Statement = {
     BlockStatement => Statement::Block(<>),
     IfStatement => Statement::If(<>),
     Assignment => Statement::Assignment(<>),
-// FIXME: Uncommenting this statement causes a parsing ambiguity. The fix seems
-//        to be writing a custom lexer, according to
-//        https://p4.org/p4-spec/docs/P4-16-v1.2.1.html#sec-grammar
-//    FunctionCall => Statement::FunctionCall(<>)
+    FunctionCall => Statement::FunctionCall(<>)
 };
 
 StatementOrDecl: StatementOrDecl = {
@@ -110,8 +118,16 @@ Direction: Direction = {
     "inout" => Direction::InOut
 };
 
-// Treat types as identifiers for simplicity
-TypeRef = Identifier;
+TypeRef: TypeRef = {
+    BaseType => TypeRef::Base(<>),
+    TypeIdentifier => TypeRef::Identifier(<>)
+};
+
+BaseType: BaseType = {
+    "bool" => BaseType::Bool
+};
+
+TypeIdentifier: String = "TY_IDENT" => <>.to_string();
 
 Identifier: String = "IDENT" => <>.to_string();
 
@@ -142,6 +158,7 @@ extern {
         "}" => Token::RBrace,
         "&&" => Token::AndAnd,
         "||" => Token::OrOr,
+        "struct" => Token::Struct,
         "control" => Token::Control,
         "apply" => Token::Apply,
         "action" => Token::Action,
@@ -153,7 +170,9 @@ extern {
         "inout" => Token::InOut,
         "true" => Token::True,
         "false" => Token::False,
-        "IDENT" => Token::Identifier(<&'input str>),
+        "bool" => Token::Bool,
+        "IDENT" => Token::Identifier((<&'input str>, false)),
+        "TY_IDENT" => Token::Identifier((<&'input str>, true)),
         "FILE_PATH" => Token::FilePath(<&'input str>),
     }
 }
