@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Read;
 use std::ops::Deref;
+use std::time::Instant;
 use z3::{Config, Context, SatResult, Solver};
 
 mod ast;
@@ -35,18 +36,26 @@ fn main() {
         .unwrap();
 
     // Parse P4
+    let parse_start = Instant::now();
     let p4_program = parse(&p4_program_str);
+    let time_to_parse = parse_start.elapsed();
 
     // Convert to GCL
+    let gcl_start = Instant::now();
     let mut graph = GclGraph::new();
     let gcl_start_node = p4_program.to_gcl(&mut graph);
+    let time_to_gcl = gcl_start.elapsed();
 
     // Calculate the weakest liberal precondition for each node
+    let wlp_start = Instant::now();
     let node_wlp = graph.to_wlp();
+    let time_to_wlp = wlp_start.elapsed();
     display_wlp(&graph, &node_wlp);
 
     // Calculate reachability
+    let reachable_start = Instant::now();
     let is_reachable = calculate_reachable(&graph, &node_wlp);
+    let time_to_reachable = reachable_start.elapsed();
 
     // Print out the graphviz representation
     let graphviz = make_graphviz(&graph, &is_reachable);
@@ -54,6 +63,17 @@ fn main() {
 
     // Show all reachable bugs
     display_bugs(&graph, &is_reachable, gcl_start_node);
+
+    println!(
+        "\nTime to parse P4: {}ms\n\
+         Time to convert to GCL: {}ms\n\
+         Time to calculate WLP: {}ms\n\
+         Time to calculate reachability: {}ms",
+        time_to_parse.as_millis(),
+        time_to_gcl.as_millis(),
+        time_to_wlp.as_millis(),
+        time_to_reachable.as_millis()
+    );
 }
 
 fn display_wlp(graph: &GclGraph, node_wlp: &HashMap<NodeIndex, GclPredicate>) {
