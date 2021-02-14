@@ -5,6 +5,7 @@ use crate::ast::Program;
 use crate::convert::ToGcl;
 use crate::gcl::{GclCommand, GclGraph, GclPredicate};
 use lalrpop_util::ParseError;
+use logos::Logos;
 use petgraph::dot::Dot;
 use petgraph::graph::NodeIndex;
 use std::collections::HashMap;
@@ -15,6 +16,7 @@ use z3::{Config, Context, SatResult, Solver};
 mod ast;
 mod convert;
 mod gcl;
+mod lexer;
 mod to_wlp;
 mod verify_wlp;
 
@@ -130,7 +132,9 @@ fn path_to(graph: &GclGraph, start_idx: NodeIndex, node_idx: NodeIndex) -> Optio
 /// Parse the P4 program. If there are errors during parsing, the program will
 /// exit.
 fn parse(p4_program_str: &str) -> Program {
-    match p4_parser::ProgramParser::new().parse(p4_program_str) {
+    let lexer_iter = lexer::LalrpopLexerIter::new(lexer::Token::lexer(p4_program_str));
+
+    match p4_parser::ProgramParser::new().parse(p4_program_str, lexer_iter) {
         Ok(parsed_ast) => {
             println!("{:#?}\n", parsed_ast);
             parsed_ast
@@ -146,7 +150,7 @@ fn parse(p4_program_str: &str) -> Program {
         }) => {
             let (line, col) = index_to_line_col(p4_program_str, lspan);
             eprintln!(
-                "Unrecognized token '{}' at line {}, column {}, expected [{}]",
+                "Unrecognized token '{:?}' at line {}, column {}, expected [{}]",
                 token,
                 line,
                 col,
@@ -169,13 +173,15 @@ fn parse(p4_program_str: &str) -> Program {
         }) => {
             let (line, col) = index_to_line_col(p4_program_str, lspan);
             eprintln!(
-                "Unexpected extra token '{}' at line {}, column {}",
+                "Unexpected extra token '{:?}' at line {}, column {}",
                 token, line, col
             );
             std::process::exit(1);
         }
         Err(ParseError::User { error }) => {
-            eprintln!("{}", error);
+            let token = &p4_program_str[error.clone()];
+            let (line, col) = index_to_line_col(p4_program_str, error.start);
+            eprintln!("Invalid token '{}' at line {}, column {}", token, line, col);
             std::process::exit(1);
         }
     }

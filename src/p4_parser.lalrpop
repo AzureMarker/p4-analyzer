@@ -1,6 +1,8 @@
 use crate::ast::*;
+use crate::lexer::Token;
+use std::ops::Range;
 
-grammar;
+grammar<'input>(input: &'input str);
 
 pub Program: Program = Declaration* => Program { declarations: <> };
 
@@ -111,10 +113,10 @@ Direction: Direction = {
 // Treat types as identifiers for simplicity
 TypeRef = Identifier;
 
-Identifier: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => <>.to_string();
+Identifier: String = "IDENT" => <>.to_string();
 
 // File path, must contain a period
-Path: String = r"[a-zA-Z0-9_.]+\.[a-zA-Z0-9_]+" => <>.to_string();
+Path: String = "FILE_PATH" => <>.to_string();
 
 // Allows trailing element
 Comma<T>: Vec<T> = {
@@ -124,15 +126,34 @@ Comma<T>: Vec<T> = {
    }
 };
 
-match {
-    // Ignore comments
-    r"//[^\n]*" => { },
-    // Taken from https://stackoverflow.com/a/46220379
-    r"/\*/*(?:(?:\**[^*/]+/*)*)\*+/" => { },
+extern {
+    type Location = usize;
+    type Error = Range<usize>;
 
-    // Ignore whitespace
-    r"\s" => { },
-
-    // Catch-all for the rest of the terminals
-    _
+    enum Token<'input> {
+        "=" => Token::Equals,
+        "_" => Token::Underscore,
+        ";" => Token::Semicolon,
+        "," => Token::Comma,
+        "!" => Token::Exclamation,
+        "(" => Token::LParen,
+        ")" => Token::RParen,
+        "{" => Token::LBrace,
+        "}" => Token::RBrace,
+        "&&" => Token::AndAnd,
+        "||" => Token::OrOr,
+        "control" => Token::Control,
+        "apply" => Token::Apply,
+        "action" => Token::Action,
+        "const" => Token::Const,
+        "if" => Token::If,
+        "else" => Token::Else,
+        "in" => Token::In,
+        "out" => Token::Out,
+        "inout" => Token::InOut,
+        "true" => Token::True,
+        "false" => Token::False,
+        "IDENT" => Token::Identifier(<&'input str>),
+        "FILE_PATH" => Token::FilePath(<&'input str>),
+    }
 }

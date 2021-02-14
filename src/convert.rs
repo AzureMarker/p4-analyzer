@@ -627,7 +627,7 @@ impl ToGcl for FunctionCall {
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        // TODO: handle setting arguments
+        // TODO: handle setting arguments and verifying args have values
         let function_range = graph
             .get_function(&self.name)
             .unwrap_or_else(|| panic!("Unable to find function {}", self.name));
