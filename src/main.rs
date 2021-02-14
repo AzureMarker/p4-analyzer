@@ -29,6 +29,21 @@ lalrpop_mod!(
 );
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect::<Vec<_>>();
+
+    // Only check reachability of bug nodes by default
+    let mut only_bugs = true;
+
+    match args.as_slice() {
+        [_, "--full-reachability"] => only_bugs = false,
+        [_] | [] => {}
+        [name, ..] => {
+            eprintln!("Usage: {} [--full-reachability]", name);
+            return;
+        }
+    }
+
     // Read P4 program
     let mut p4_program_str = String::new();
     std::io::stdin()
@@ -54,7 +69,7 @@ fn main() {
 
     // Calculate reachability
     let reachable_start = Instant::now();
-    let is_reachable = calculate_reachable(&graph, &node_wlp);
+    let is_reachable = calculate_reachable(&graph, &node_wlp, only_bugs);
     let time_to_reachable = reachable_start.elapsed();
 
     // Print out the graphviz representation
@@ -88,6 +103,7 @@ fn display_wlp(graph: &GclGraph, node_wlp: &HashMap<NodeIndex, GclPredicate>) {
 fn calculate_reachable(
     graph: &GclGraph,
     node_wlp: &HashMap<NodeIndex, GclPredicate>,
+    only_bugs: bool,
 ) -> HashMap<NodeIndex, bool> {
     let config = Config::new();
     let context = Context::new(&config);
@@ -95,24 +111,28 @@ fn calculate_reachable(
 
     graph
         .node_indices()
-        .map(|node_idx| {
+        .filter_map(|node_idx| {
+            let node = graph.node_weight(node_idx).unwrap();
+
+            if only_bugs && !matches!(node.command, GclCommand::Bug) {
+                return None;
+            }
+
             let wlp = node_wlp.get(&node_idx).unwrap();
             solver.assert(&wlp.as_z3_ast(&context).as_bool().unwrap());
             let is_reachable = solver.check() == SatResult::Sat;
             solver.reset();
 
-            (node_idx, is_reachable)
+            Some((node_idx, is_reachable))
         })
         .collect()
 }
 
 fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> String {
-    let get_node_attributes = |_graph, (node_idx, _)| {
-        if *is_reachable.get(&node_idx).unwrap() {
-            "shape = box, color = green".to_string()
-        } else {
-            "shape = box, color = red".to_string()
-        }
+    let get_node_attributes = |_graph, (node_idx, _)| match is_reachable.get(&node_idx) {
+        Some(true) => "shape = box, color = green".to_string(),
+        Some(false) => "shape = box, color = red".to_string(),
+        None => "shape = box, color = grey".to_string(),
     };
     let graphviz_graph = Dot::with_attr_getters(
         graph.deref(),
@@ -130,7 +150,8 @@ fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>, start
     for node_idx in graph.node_indices() {
         let node = graph.node_weight(node_idx).unwrap();
 
-        if matches!(node.command, GclCommand::Bug) && *is_reachable.get(&node_idx).unwrap() {
+        if matches!(node.command, GclCommand::Bug) && *is_reachable.get(&node_idx).unwrap_or(&false)
+        {
             found_bug = true;
             let path = path_to(graph, start_idx, node_idx).map(|path| {
                 // Get the name of each node
