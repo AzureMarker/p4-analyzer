@@ -1,4 +1,4 @@
-use crate::gcl::{GclAssignment, GclGraph, GclPredicate};
+use crate::gcl::{GclAssignment, GclCommand, GclGraph, GclPredicate};
 use petgraph::algo::toposort;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -29,10 +29,10 @@ impl GclGraph {
                 }
             }
 
-            let assignments = node
-                .command
-                .get_assignments()
-                .map(|GclAssignment { name, pred }| (name.as_str(), pred));
+            let assignments = node.commands.iter().filter_map(|cmd| match cmd {
+                GclCommand::Assignment(GclAssignment { name, pred }) => Some((name.as_str(), pred)),
+                _ => None,
+            });
             common_assignments.extend(assignments);
 
             let mut parent_wlps = self

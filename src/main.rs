@@ -3,7 +3,7 @@ extern crate lalrpop_util;
 
 use crate::ast::Program;
 use crate::convert::ToGcl;
-use crate::gcl::{GclCommand, GclGraph, GclPredicate};
+use crate::gcl::{GclGraph, GclPredicate};
 use crate::lexer::{LalrpopLexerIter, Token};
 use lalrpop_util::ParseError;
 use logos::Logos;
@@ -121,7 +121,7 @@ fn calculate_reachable(
     graph
         .node_references()
         .filter_map(|(node_idx, node)| {
-            if only_bugs && !matches!(node.command, GclCommand::Bug) {
+            if only_bugs && !node.is_bug() {
                 return None;
             }
 
@@ -155,8 +155,7 @@ fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>, start
     let mut found_bug = false;
 
     for (node_idx, node) in graph.node_references() {
-        if matches!(node.command, GclCommand::Bug) && *is_reachable.get(&node_idx).unwrap_or(&false)
-        {
+        if node.is_bug() && *is_reachable.get(&node_idx).unwrap_or(&false) {
             found_bug = true;
             let path = path_to(graph, start_idx, node_idx).map(|path| {
                 // Get the name of each node

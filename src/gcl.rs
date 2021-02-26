@@ -3,9 +3,9 @@
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::{StableDiGraph, StableGraph};
 use std::collections::HashMap;
+use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
-use std::{fmt, iter};
 
 pub struct GclGraph {
     inner: StableDiGraph<GclNode, GclPredicate>,
@@ -57,12 +57,24 @@ impl DerefMut for GclGraph {
 #[derive(Debug)]
 pub struct GclNode {
     pub name: String,
-    pub command: GclCommand,
+    pub commands: Vec<GclCommand>,
+}
+
+impl GclNode {
+    pub fn is_bug(&self) -> bool {
+        self.commands.contains(&GclCommand::Bug)
+    }
 }
 
 impl Display for GclNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Node '{}'\n{:#}\n", self.name, self.command)
+        writeln!(f, "Node '{}'", self.name)?;
+
+        for cmd in &self.commands {
+            writeln!(f, "{};", cmd)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -74,12 +86,9 @@ pub struct GclNodeRange {
     pub end: NodeIndex,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GclCommand {
     Assignment(GclAssignment),
-    Sequence(Box<GclCommand>, Box<GclCommand>),
-    /// A no-op, used in empty nodes
-    Skip,
     /// Represents a bug in the program, ex. if an assert fails
     Bug,
 }
@@ -88,56 +97,12 @@ impl Display for GclCommand {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             GclCommand::Assignment(assignment) => Display::fmt(assignment, f),
-            GclCommand::Sequence(cmd1, cmd2) => {
-                if f.alternate() {
-                    write!(f, "{:#};\n{:#}", cmd1, cmd2)
-                } else {
-                    write!(f, "{}; {}", cmd1, cmd2)
-                }
-            }
-            GclCommand::Skip => f.write_str("skip"),
             GclCommand::Bug => f.write_str("bug"),
         }
     }
 }
 
-impl Default for GclCommand {
-    fn default() -> Self {
-        GclCommand::Skip
-    }
-}
-
-pub trait Flatten: IntoIterator {
-    /// Convert from a stream of items into a single item representing the item
-    /// stream. For example, used to convert `Vec<GclCommand>` into `GclCommand`
-    /// by using `GclCommand::Sequence`.
-    fn flatten(self) -> Self::Item;
-}
-
-impl Flatten for Vec<GclCommand> {
-    fn flatten(self) -> Self::Item {
-        let mut command_iter = self.into_iter().rev();
-        let last_command = command_iter.next().unwrap_or_default();
-
-        command_iter.fold(last_command, |acc, next| {
-            GclCommand::Sequence(Box::new(next), Box::new(acc))
-        })
-    }
-}
-
-impl GclCommand {
-    pub fn get_assignments(&self) -> Box<dyn Iterator<Item = &GclAssignment> + '_> {
-        match self {
-            GclCommand::Assignment(assignment) => Box::new(iter::once(assignment)),
-            GclCommand::Sequence(left, right) => {
-                Box::new(left.get_assignments().chain(right.get_assignments()))
-            }
-            GclCommand::Skip | GclCommand::Bug => Box::new(iter::empty()),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GclPredicate {
     Equality(Box<GclPredicate>, Box<GclPredicate>),
     Conjunction(Box<GclPredicate>, Box<GclPredicate>),
@@ -172,17 +137,6 @@ impl Default for GclPredicate {
     }
 }
 
-impl Flatten for Vec<GclPredicate> {
-    fn flatten(self) -> Self::Item {
-        let mut pred_iter = self.into_iter().rev();
-        let last_pred = pred_iter.next().unwrap_or_default();
-
-        pred_iter.fold(last_pred, |acc, next| {
-            GclPredicate::Conjunction(Box::new(next), Box::new(acc))
-        })
-    }
-}
-
 impl GclPredicate {
     /// Get all of the variables this expression reads from
     pub fn find_all_vars(&self) -> Vec<String> {
@@ -202,7 +156,7 @@ impl GclPredicate {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GclAssignment {
     pub name: String,
     pub pred: GclPredicate,

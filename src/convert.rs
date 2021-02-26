@@ -5,9 +5,7 @@ use crate::ast::{
     Declaration, Expr, FunctionCall, IfStatement, Instantiation, Program, Statement,
     StatementOrDecl, TypeRef, VariableDecl,
 };
-use crate::gcl::{
-    Flatten, GclAssignment, GclCommand, GclGraph, GclNode, GclNodeRange, GclPredicate,
-};
+use crate::gcl::{GclAssignment, GclCommand, GclGraph, GclNode, GclNodeRange, GclPredicate};
 use either::Either;
 use petgraph::graph::NodeIndex;
 
@@ -25,7 +23,7 @@ impl ToGcl for Program {
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let start_idx = graph.add_node(GclNode {
             name: "start".to_string(),
-            command: GclCommand::default(),
+            commands: Vec::new(),
         });
 
         let mut commands = Vec::new();
@@ -54,7 +52,7 @@ impl ToGcl for Program {
             }
         }
 
-        graph.node_weight_mut(start_idx).unwrap().command = commands.flatten();
+        graph.node_weight_mut(start_idx).unwrap().commands = commands;
 
         let main_decl = self
             .declarations
@@ -141,16 +139,16 @@ impl ToGcl for ConstantDecl {
 
         let node_idx = graph.add_node(GclNode {
             name,
-            command: GclCommand::Sequence(
-                Box::new(GclCommand::Assignment(GclAssignment {
+            commands: vec![
+                GclCommand::Assignment(GclAssignment {
                     name: format!("_has_value__{}", self.name),
                     pred: GclPredicate::Bool(true),
-                })),
-                Box::new(GclCommand::Assignment(GclAssignment {
+                }),
+                GclCommand::Assignment(GclAssignment {
                     name: self.name.clone(),
                     pred,
-                })),
-            ),
+                }),
+            ],
         });
         graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
 
@@ -169,10 +167,10 @@ impl ToGcl for ActionDecl {
         let start_node_idx = graph.add_node(GclNode {
             name: format!("action__{}", self.name),
             // FIXME: remove ret hack
-            command: GclCommand::Assignment(GclAssignment {
+            commands: vec![GclCommand::Assignment(GclAssignment {
                 name: "ret".to_string(),
                 pred: GclPredicate::Bool(true),
-            }),
+            })],
         });
         graph.add_edge(start_node_idx, body_range.start, GclPredicate::default());
 
@@ -202,7 +200,7 @@ impl ToGcl for BlockStatement {
             let name = graph.create_name("block_stmt_body");
             let node_idx = graph.add_node(GclNode {
                 name,
-                command: std::mem::take(current_commands).flatten(),
+                commands: std::mem::take(current_commands),
             });
 
             // Hook up the node to the end of the node chain
@@ -297,32 +295,27 @@ impl ToGcl for VariableDecl {
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        let has_decl_command = GclCommand::Assignment(GclAssignment {
-            name: format!("_declared_var__{}", self.name),
-            pred: GclPredicate::Bool(true),
-        });
-        let has_value_command = GclCommand::Assignment(GclAssignment {
-            name: format!("_has_value__{}", self.name),
-            pred: GclPredicate::Bool(self.value.is_some()),
-        });
-        let ghost_variables =
-            GclCommand::Sequence(Box::new(has_decl_command), Box::new(has_value_command));
+        let mut commands = vec![
+            GclCommand::Assignment(GclAssignment {
+                name: format!("_declared_var__{}", self.name),
+                pred: GclPredicate::Bool(true),
+            }),
+            GclCommand::Assignment(GclAssignment {
+                name: format!("_has_value__{}", self.name),
+                pred: GclPredicate::Bool(self.value.is_some()),
+            }),
+        ];
         let name = graph.create_name(&format!("var_decl__{}", self.name));
 
         match self.value.as_ref() {
             Some(value) => {
                 let (pred, expr_range) = value.to_gcl(graph);
+                commands.push(GclCommand::Assignment(GclAssignment {
+                    name: self.name.clone(),
+                    pred,
+                }));
 
-                let node_idx = graph.add_node(GclNode {
-                    name,
-                    command: GclCommand::Sequence(
-                        Box::new(ghost_variables),
-                        Box::new(GclCommand::Assignment(GclAssignment {
-                            name: self.name.clone(),
-                            pred,
-                        })),
-                    ),
-                });
+                let node_idx = graph.add_node(GclNode { name, commands });
                 graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
 
                 GclNodeRange {
@@ -331,10 +324,7 @@ impl ToGcl for VariableDecl {
                 }
             }
             None => {
-                let node_idx = graph.add_node(GclNode {
-                    name,
-                    command: ghost_variables,
-                });
+                let node_idx = graph.add_node(GclNode { name, commands });
 
                 GclNodeRange {
                     start: node_idx,
@@ -364,16 +354,16 @@ impl ToGcl for Assignment {
         let (pred, expr_range) = self.value.to_gcl(graph);
         let node = GclNode {
             name: graph.create_name(&format!("assignment__{}", self.name)),
-            command: GclCommand::Sequence(
-                Box::new(GclCommand::Assignment(GclAssignment {
+            commands: vec![
+                GclCommand::Assignment(GclAssignment {
                     name: format!("_has_value__{}", self.name),
                     pred: GclPredicate::Bool(true),
-                })),
-                Box::new(GclCommand::Assignment(GclAssignment {
+                }),
+                GclCommand::Assignment(GclAssignment {
                     name: self.name.clone(),
                     pred,
-                })),
-            ),
+                }),
+            ],
         };
         let node_idx = graph.add_node(node);
         graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
@@ -398,7 +388,7 @@ impl ToGcl for IfStatement {
         // Create the end node first so we can refer to its index
         let end_node = GclNode {
             name: graph.create_name("if_end"),
-            command: GclCommand::default(),
+            commands: Vec::new(),
         };
         let end_node_idx = graph.add_node(end_node);
 
@@ -477,10 +467,10 @@ impl ToGcl for Expr {
                 let name = graph.create_name("expr");
                 let node_idx = graph.add_node(GclNode {
                     name: name.clone(),
-                    command: GclCommand::Assignment(GclAssignment {
+                    commands: vec![GclCommand::Assignment(GclAssignment {
                         name: name.clone(),
                         pred: GclPredicate::Negation(Box::new(inner_pred)),
-                    }),
+                    })],
                 });
                 graph.add_edge(inner_range.end, node_idx, GclPredicate::default());
 
@@ -497,10 +487,10 @@ impl ToGcl for Expr {
                 let name = graph.create_name("expr");
                 let node = GclNode {
                     name: graph.create_name("expr_func"),
-                    command: GclCommand::Assignment(GclAssignment {
+                    commands: vec![GclCommand::Assignment(GclAssignment {
                         name: name.clone(),
                         pred: GclPredicate::Var("ret".to_string()),
-                    }),
+                    })],
                 };
                 let node_idx = graph.add_node(node);
                 graph.add_edge(func_range.end, node_idx, GclPredicate::default());
@@ -546,10 +536,10 @@ impl Expr {
         let name = graph.create_name("expr");
         let node_idx = graph.add_node(GclNode {
             name: name.clone(),
-            command: GclCommand::Assignment(GclAssignment {
+            commands: vec![GclCommand::Assignment(GclAssignment {
                 name: name.clone(),
                 pred: value,
-            }),
+            })],
         });
 
         (name, node_idx)
@@ -570,21 +560,21 @@ impl Expr {
 
         let true_node = GclNode {
             name: graph.create_name(&format!("{}_expr_true", op_name)),
-            command: GclCommand::Assignment(GclAssignment {
+            commands: vec![GclCommand::Assignment(GclAssignment {
                 name: name.clone(),
                 pred: GclPredicate::Bool(true),
-            }),
+            })],
         };
         let false_node = GclNode {
             name: graph.create_name(&format!("{}_expr_false", op_name)),
-            command: GclCommand::Assignment(GclAssignment {
+            commands: vec![GclCommand::Assignment(GclAssignment {
                 name: name.clone(),
                 pred: GclPredicate::Bool(false),
-            }),
+            })],
         };
         let end_node = GclNode {
             name: graph.create_name(&format!("{}_expr_end", op_name)),
-            command: GclCommand::Skip,
+            commands: Vec::new(),
         };
 
         let true_node_idx = graph.add_node(true_node);
@@ -638,14 +628,14 @@ impl ToGcl for FunctionCall {
         let ret_target_var = format!("func_ret_target__{}", self.name);
         let start_idx = graph.add_node(GclNode {
             name: start_name,
-            command: GclCommand::Assignment(GclAssignment {
+            commands: vec![GclCommand::Assignment(GclAssignment {
                 name: ret_target_var.clone(),
                 pred: GclPredicate::String(end_name.clone()),
-            }),
+            })],
         });
         let end_idx = graph.add_node(GclNode {
             name: end_name.clone(),
-            command: GclCommand::Skip,
+            commands: Vec::new(),
         });
 
         graph.add_edge(start_idx, function_range.start, GclPredicate::default());
@@ -674,13 +664,13 @@ fn make_assert_node(
 ) -> NodeIndex {
     let bug_node = GclNode {
         name: graph.create_name("bug"),
-        command: GclCommand::Bug,
+        commands: vec![GclCommand::Bug],
     };
     let bug_node_idx = graph.add_node(bug_node);
 
     let assert_node = GclNode {
         name: graph.create_name("assert"),
-        command: GclCommand::default(),
+        commands: Vec::new(),
     };
     let assert_node_idx = graph.add_node(assert_node);
 
