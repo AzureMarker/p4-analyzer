@@ -141,11 +141,11 @@ impl ToGcl for ConstantDecl {
             name,
             commands: vec![
                 GclCommand::Assignment(GclAssignment {
-                    name: format!("_has_value__{}", self.name),
+                    name: format!("has_value__{}", self.name),
                     pred: GclPredicate::Bool(true),
                 }),
                 GclCommand::Assignment(GclAssignment {
-                    name: self.name.clone(),
+                    name: format!("var__{}", self.name),
                     pred,
                 }),
             ],
@@ -297,11 +297,11 @@ impl ToGcl for VariableDecl {
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         let mut commands = vec![
             GclCommand::Assignment(GclAssignment {
-                name: format!("_declared_var__{}", self.name),
+                name: format!("declared_var__{}", self.name),
                 pred: GclPredicate::Bool(true),
             }),
             GclCommand::Assignment(GclAssignment {
-                name: format!("_has_value__{}", self.name),
+                name: format!("has_value__{}", self.name),
                 pred: GclPredicate::Bool(self.value.is_some()),
             }),
         ];
@@ -311,7 +311,7 @@ impl ToGcl for VariableDecl {
             Some(value) => {
                 let (pred, expr_range) = value.to_gcl(graph);
                 commands.push(GclCommand::Assignment(GclAssignment {
-                    name: self.name.clone(),
+                    name: format!("var__{}", self.name),
                     pred,
                 }));
 
@@ -340,7 +340,7 @@ impl ToGcl for Instantiation {
 
     fn to_gcl(&self, _graph: &mut GclGraph) -> Self::Output {
         GclCommand::Assignment(GclAssignment {
-            name: format!("_has_value__{}", self.name),
+            name: format!("has_value__{}", self.name),
             pred: GclPredicate::Bool(true),
         })
     }
@@ -356,11 +356,11 @@ impl ToGcl for Assignment {
             name: graph.create_name(&format!("assignment__{}", self.name)),
             commands: vec![
                 GclCommand::Assignment(GclAssignment {
-                    name: format!("_has_value__{}", self.name),
+                    name: format!("has_value__{}", self.name),
                     pred: GclPredicate::Bool(true),
                 }),
                 GclCommand::Assignment(GclAssignment {
-                    name: self.name.clone(),
+                    name: format!("var__{}", self.name),
                     pred,
                 }),
             ],
@@ -370,7 +370,7 @@ impl ToGcl for Assignment {
 
         let assert_node_idx = make_assert_node(
             graph,
-            GclPredicate::Var(format!("_declared_var__{}", self.name)),
+            GclPredicate::Var(format!("declared_var__{}", self.name)),
             expr_range.start,
         );
 
@@ -444,11 +444,13 @@ impl ToGcl for Expr {
                 )
             }
             Expr::Var(name) => {
-                let (expr_name, node_idx) =
-                    Self::single_assignment_node(graph, GclPredicate::Var(name.clone()));
+                let (expr_name, node_idx) = Self::single_assignment_node(
+                    graph,
+                    GclPredicate::Var(format!("var__{}", name)),
+                );
                 let assert_idx = make_assert_node(
                     graph,
-                    GclPredicate::Var(format!("_has_value__{}", name)),
+                    GclPredicate::Var(format!("has_value__{}", name)),
                     node_idx,
                 );
 
