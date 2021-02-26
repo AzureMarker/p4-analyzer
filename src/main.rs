@@ -3,7 +3,7 @@ extern crate lalrpop_util;
 
 use crate::ast::Program;
 use crate::convert::ToGcl;
-use crate::gcl::{GclGraph, GclPredicate};
+use crate::gcl::{GclGraph, GclNode, GclPredicate};
 use crate::lexer::{LalrpopLexerIter, Token};
 use lalrpop_util::ParseError;
 use logos::Logos;
@@ -136,10 +136,15 @@ fn calculate_reachable(
 }
 
 fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> String {
-    let get_node_attributes = |_graph, (node_idx, _)| match is_reachable.get(&node_idx) {
-        Some(true) => "shape = box, color = green".to_string(),
-        Some(false) => "shape = box, color = red".to_string(),
-        None => "shape = box, color = grey".to_string(),
+    let get_node_attributes = |_graph, (node_idx, node): (NodeIndex, &GclNode)| {
+        let color = match (node.is_bug(), is_reachable.get(&node_idx)) {
+            (true, Some(true)) => "red",
+            (false, Some(true)) => "green",
+            (_, Some(false)) => "grey",
+            (_, None) => "black",
+        };
+
+        format!("shape = box, color = {}", color)
     };
     let graphviz_graph = Dot::with_attr_getters(
         graph.deref(),
