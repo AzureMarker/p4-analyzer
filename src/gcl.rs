@@ -102,7 +102,7 @@ impl Display for GclCommand {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum GclPredicate {
     Equality(Box<GclPredicate>, Box<GclPredicate>),
     Conjunction(Box<GclPredicate>, Box<GclPredicate>),

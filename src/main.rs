@@ -5,6 +5,7 @@ use crate::ast::Program;
 use crate::convert::ToGcl;
 use crate::gcl::{GclGraph, GclNode, GclPredicate};
 use crate::lexer::{LalrpopLexerIter, Token};
+use crate::to_wlp::{VariableMap, WlpMap};
 use lalrpop_util::ParseError;
 use logos::Logos;
 use petgraph::dot::Dot;
@@ -64,9 +65,10 @@ fn main() {
 
     // Calculate the weakest liberal precondition for each node
     let wlp_start = Instant::now();
-    let node_wlp = graph.to_wlp();
+    let (node_wlp, node_variables) = graph.to_wlp();
     let time_to_wlp = wlp_start.elapsed();
     display_wlp(&graph, &node_wlp);
+    display_node_vars(&graph, &node_variables);
 
     // Calculate reachability
     let reachable_start = Instant::now();
@@ -94,13 +96,39 @@ fn main() {
     );
 }
 
-fn display_wlp(graph: &GclGraph, node_wlp: &HashMap<NodeIndex, GclPredicate>) {
+fn display_wlp(graph: &GclGraph, node_wlp: &WlpMap) {
     println!("Weakest Liberal Preconditions:");
     for (node_idx, wlp) in node_wlp {
         let node_name = &graph.node_weight(*node_idx).unwrap().name;
 
         println!("Node '{}': {}", node_name, wlp);
     }
+    println!();
+}
+
+fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
+    println!("Node Variables:");
+    let mut node_vars: Vec<_> = node_vars
+        .iter()
+        .map(|(node_idx, values)| (graph.node_weight(*node_idx).unwrap().name.as_str(), values))
+        .collect();
+    node_vars.sort_by_key(|(name, _)| *name);
+
+    for (node_name, vars) in node_vars {
+        println!("Node '{}':", node_name);
+        for (var, values) in vars {
+            println!(
+                "    {} = [{}]",
+                var,
+                values
+                    .iter()
+                    .map(|v| format!("{}", v))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+    println!();
 }
 
 fn calculate_reachable(
