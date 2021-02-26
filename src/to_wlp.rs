@@ -124,9 +124,6 @@ impl GclPredicate {
             GclPredicate::Disjunction(left, right) => {
                 cross_product(left, right, values, GclPredicate::Disjunction)
             }
-            GclPredicate::Implication(left, right) => {
-                cross_product(left, right, values, GclPredicate::Implication)
-            }
             GclPredicate::Negation(inner) => inner
                 .fill_in(values)
                 .into_iter()

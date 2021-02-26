@@ -1,7 +1,7 @@
 //! Convert P4 to GCL
 
 use crate::ast::{
-    ActionDecl, Argument, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
+    ActionDecl, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
     Declaration, Expr, FunctionCall, IfStatement, Instantiation, Program, Statement,
     StatementOrDecl, TypeRef, VariableDecl,
 };
@@ -510,29 +510,6 @@ impl ToGcl for Expr {
 }
 
 impl Expr {
-    /// Get all of the variables this expression reads from
-    fn find_all_vars(&self) -> Vec<&str> {
-        match self {
-            Expr::Bool(_) => Vec::new(),
-            Expr::Var(name) => vec![name],
-            Expr::And(left, right) | Expr::Or(left, right) => {
-                let mut vars = left.find_all_vars();
-                vars.extend(right.find_all_vars());
-                vars
-            }
-            Expr::Negation(inner) => inner.find_all_vars(),
-            // TODO: should the target function variable be included here?
-            Expr::FunctionCall(FunctionCall { arguments, .. }) => arguments
-                .iter()
-                .flat_map(|arg| match arg {
-                    Argument::Value(value) => value.find_all_vars(),
-                    Argument::Named(_, value) => value.find_all_vars(),
-                    Argument::DontCare => Vec::new(),
-                })
-                .collect(),
-        }
-    }
-
     /// Create a node which just assigns a predicate to a variable
     fn single_assignment_node(graph: &mut GclGraph, value: GclPredicate) -> (String, NodeIndex) {
         let name = graph.create_name("expr");

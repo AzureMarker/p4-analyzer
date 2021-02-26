@@ -107,7 +107,6 @@ pub enum GclPredicate {
     Equality(Box<GclPredicate>, Box<GclPredicate>),
     Conjunction(Box<GclPredicate>, Box<GclPredicate>),
     Disjunction(Box<GclPredicate>, Box<GclPredicate>),
-    Implication(Box<GclPredicate>, Box<GclPredicate>),
     Negation(Box<GclPredicate>),
     Bool(bool),
     String(String),
@@ -121,7 +120,6 @@ impl Display for GclPredicate {
             GclPredicate::Equality(e1, e2) => write!(f, "({}) = ({})", e1, e2),
             GclPredicate::Conjunction(p1, p2) => write!(f, "({}) && ({})", p1, p2),
             GclPredicate::Disjunction(p1, p2) => write!(f, "({}) || ({})", p1, p2),
-            GclPredicate::Implication(p1, p2) => write!(f, "({}) => ({})", p1, p2),
             GclPredicate::Negation(pred) => write!(f, "!({})", pred),
             GclPredicate::Bool(e) => Display::fmt(e, f),
             GclPredicate::String(s) => Debug::fmt(s, f),
@@ -134,25 +132,6 @@ impl Default for GclPredicate {
     /// An always true GCL predicate
     fn default() -> Self {
         GclPredicate::Bool(true)
-    }
-}
-
-impl GclPredicate {
-    /// Get all of the variables this expression reads from
-    pub fn find_all_vars(&self) -> Vec<String> {
-        match self {
-            GclPredicate::Bool(_) | GclPredicate::String(_) => Vec::new(),
-            GclPredicate::Var(name) | GclPredicate::StringVar(name) => vec![name.clone()],
-            GclPredicate::Negation(inner) => inner.find_all_vars(),
-            GclPredicate::Conjunction(left, right)
-            | GclPredicate::Disjunction(left, right)
-            | GclPredicate::Equality(left, right)
-            | GclPredicate::Implication(left, right) => {
-                let mut vars = left.find_all_vars();
-                vars.extend(right.find_all_vars());
-                vars
-            }
-        }
     }
 }
 

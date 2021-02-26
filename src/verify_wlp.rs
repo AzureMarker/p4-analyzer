@@ -20,13 +20,6 @@ impl GclPredicate {
             GclPredicate::Equality(left, right) => {
                 Dynamic::from_ast(&left.as_z3_ast(context)._eq(&right.as_z3_ast(context)))
             }
-            GclPredicate::Implication(left, right) => Dynamic::from_ast(
-                &left
-                    .as_z3_ast(context)
-                    .as_bool()
-                    .unwrap()
-                    .implies(&right.as_z3_ast(context).as_bool().unwrap()),
-            ),
             GclPredicate::Conjunction(left, right) => Dynamic::from_ast(&Bool::and(
                 context,
                 &[
