@@ -16,19 +16,23 @@ impl GclGraph {
         let mut node_wlp: WlpMap = HashMap::new();
         let mut node_variables: VariableMap = HashMap::new();
 
+        // Iterate through the nodes in topological order (parents before children)
         for node_idx in sorted_nodes {
             let node = self.node_weight(node_idx).unwrap();
 
-            let parent_assignments: Vec<_> = self
+            // Gather all of the variables known to the parents
+            let parent_variables: Vec<_> = self
                 .edges_directed(node_idx, Direction::Incoming)
                 .map(|edge| node_variables.get(&edge.source()).unwrap())
                 .collect();
-            let mut common_assignments: HashMap<&str, HashSet<GclPredicate>> = HashMap::new();
+            let mut current_variables: HashMap<&str, HashSet<GclPredicate>> = HashMap::new();
 
-            for assignments in parent_assignments.iter() {
-                for (name, values) in *assignments {
-                    if parent_assignments.iter().all(|map| map.contains_key(name)) {
-                        common_assignments
+            // Add all of the common variables among the parents into the current
+            // node's variable cache.
+            for variables in parent_variables.iter() {
+                for (name, values) in *variables {
+                    if parent_variables.iter().all(|map| map.contains_key(name)) {
+                        current_variables
                             .entry(*name)
                             .or_default()
                             .extend(values.iter().cloned());
@@ -36,20 +40,22 @@ impl GclGraph {
                 }
             }
 
-            let assignments: Vec<_> = node
+            // Consider this node's variable assignments
+            let variables: Vec<_> = node
                 .commands
                 .iter()
                 .filter_map(|cmd| match cmd {
                     GclCommand::Assignment(GclAssignment { name, pred }) => {
                         let pred = pred.clone();
-                        let preds = pred.fill_in(&common_assignments);
+                        let preds = pred.fill_in(&current_variables);
                         Some((name.as_str(), preds))
                     }
                     _ => None,
                 })
                 .collect();
-            common_assignments.extend(assignments);
+            current_variables.extend(variables);
 
+            // Calculate the WLP for each incoming edge
             let edge_wlps = self
                 .edges_directed(node_idx, Direction::Incoming)
                 .map(|edge| {
@@ -65,14 +71,18 @@ impl GclGraph {
                         })
                         .unwrap();
 
+                    // The parent's predicate and this edge's predicate have to
+                    // be true in order for the node to be reachable via this edge
                     GclPredicate::Conjunction(Box::new(parent_wlp.clone()), Box::new(edge_pred))
                 });
 
+            // Calculate this node's WLP by taking an OR of the edge WLPs
             let wlp = edge_wlps
                 .reduce(|acc, next| GclPredicate::Disjunction(Box::new(acc), Box::new(next)))
                 .unwrap_or_default();
 
-            node_variables.insert(node_idx, common_assignments);
+            // Update the accumulated variables and WLPs
+            node_variables.insert(node_idx, current_variables);
             node_wlp.insert(node_idx, wlp);
         }
 
