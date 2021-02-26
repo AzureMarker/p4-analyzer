@@ -10,7 +10,7 @@ impl GclGraph {
     pub fn to_wlp(&self) -> HashMap<NodeIndex, GclPredicate> {
         let sorted_nodes = toposort(self.deref(), None).expect("There should be no cycles");
         let mut node_wlp: HashMap<NodeIndex, GclPredicate> = HashMap::new();
-        let mut node_variables: HashMap<NodeIndex, HashMap<&str, &GclPredicate>> = HashMap::new();
+        let mut node_variables: HashMap<NodeIndex, HashMap<&str, GclPredicate>> = HashMap::new();
 
         for node_idx in sorted_nodes {
             let node = self.node_weight(node_idx).unwrap();
@@ -24,15 +24,23 @@ impl GclGraph {
             for assignments in parent_assignments.iter() {
                 for (name, value) in *assignments {
                     if parent_assignments.iter().all(|map| map.contains_key(name)) {
-                        common_assignments.insert(*name, *value);
+                        common_assignments.insert(*name, value.clone());
                     }
                 }
             }
 
-            let assignments = node.commands.iter().filter_map(|cmd| match cmd {
-                GclCommand::Assignment(GclAssignment { name, pred }) => Some((name.as_str(), pred)),
-                _ => None,
-            });
+            let assignments: Vec<_> = node
+                .commands
+                .iter()
+                .filter_map(|cmd| match cmd {
+                    GclCommand::Assignment(GclAssignment { name, pred }) => {
+                        let mut pred = pred.clone();
+                        pred.fill_in(&common_assignments);
+                        Some((name.as_str(), pred))
+                    }
+                    _ => None,
+                })
+                .collect();
             common_assignments.extend(assignments);
 
             let mut parent_wlps = self
@@ -42,12 +50,7 @@ impl GclGraph {
                     let parent_wlp = node_wlp.get(&parent_idx).unwrap();
                     let parent_vars = node_variables.get(&parent_idx).unwrap();
                     let mut edge_pred = edge.weight().clone();
-
-                    for var in edge_pred.find_all_vars() {
-                        if let Some(value) = parent_vars.get(var.as_str()) {
-                            edge_pred.replace_var(&var, *value);
-                        }
-                    }
+                    edge_pred.fill_in(parent_vars);
 
                     GclPredicate::Conjunction(Box::new(parent_wlp.clone()), Box::new(edge_pred))
                 });
@@ -69,20 +72,20 @@ impl GclGraph {
 }
 
 impl GclPredicate {
-    /// Replace a variable in the predicate with another predicate in-place
-    pub fn replace_var(&mut self, var: &str, value: &GclPredicate) {
+    /// Try to fill in this predicate's variables with the given values
+    pub fn fill_in(&mut self, values: &HashMap<&str, GclPredicate>) {
         match self {
             GclPredicate::Equality(left, right)
             | GclPredicate::Conjunction(left, right)
             | GclPredicate::Disjunction(left, right)
             | GclPredicate::Implication(left, right) => {
-                left.replace_var(var, value);
-                right.replace_var(var, value);
+                left.fill_in(values);
+                right.fill_in(values);
             }
-            GclPredicate::Negation(inner) => inner.replace_var(var, value),
+            GclPredicate::Negation(inner) => inner.fill_in(values),
             GclPredicate::Bool(_) | GclPredicate::String(_) => {}
             GclPredicate::Var(name) | GclPredicate::StringVar(name) => {
-                if name == var {
+                if let Some(value) = values.get(name.as_str()) {
                     *self = value.clone();
                 }
             }
