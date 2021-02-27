@@ -32,7 +32,8 @@ ControlLocalDecl: ControlLocalDecl = {
     VariableDecl => ControlLocalDecl::Variable(<>),
     Instantiation => ControlLocalDecl::Instantiation(<>),
     ConstantDecl => ControlLocalDecl::Constant(<>),
-    ActionDecl => ControlLocalDecl::Action(<>)
+    ActionDecl => ControlLocalDecl::Action(<>),
+    TableDecl => ControlLocalDecl::Table(<>),
 };
 
 ActionDecl: ActionDecl = "action" <name:Identifier> "(" <params:Comma<Param>> ")" <body:BlockStatement>
@@ -46,6 +47,16 @@ Argument: Argument = {
     <name:Identifier> "=" <value:Expr> => Argument::Named(name, value),
     "_" => Argument::DontCare
 };
+
+TableDecl: TableDecl = "table" <name:Identifier> "{" <properties:TableProperty+> "}"
+    => TableDecl { name, properties };
+
+TableProperty: TableProperty = {
+    "key" "=" "{" <KeyElement*> "}" => TableProperty::Key(<>),
+    "actions" "=" "{" <actions:Identifier*> ";" "}" => TableProperty::Actions(<>),
+};
+
+KeyElement: KeyElement = <expr:Expr> ":" <name:Identifier> ";" => KeyElement { expr, name };
 
 Statement: Statement = {
     BlockStatement => Statement::Block(<>),
@@ -150,6 +161,7 @@ extern {
         "=" => Token::Equals,
         "_" => Token::Underscore,
         ";" => Token::Semicolon,
+        ":" => Token::Colon,
         "," => Token::Comma,
         "!" => Token::Exclamation,
         "(" => Token::LParen,
@@ -160,6 +172,9 @@ extern {
         "||" => Token::OrOr,
         "struct" => Token::Struct,
         "control" => Token::Control,
+        "table" => Token::Table,
+        "key" => Token::Key,
+        "actions" => Token::Actions,
         "apply" => Token::Apply,
         "action" => Token::Action,
         "const" => Token::Const,

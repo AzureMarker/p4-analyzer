@@ -114,6 +114,9 @@ impl ToGcl for ControlDecl {
                         action_range,
                     );
                 }
+                ControlLocalDecl::Table(_table_decl) => {
+                    // TODO
+                }
             }
         }
 

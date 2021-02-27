@@ -20,6 +20,8 @@ pub enum Token<'input> {
     Underscore,
     #[token(";")]
     Semicolon,
+    #[token(":")]
+    Colon,
     #[token(",")]
     Comma,
     #[token("!")]
@@ -40,6 +42,12 @@ pub enum Token<'input> {
     Struct,
     #[token("control")]
     Control,
+    #[token("table")]
+    Table,
+    #[token("key")]
+    Key,
+    #[token("actions")]
+    Actions,
     #[token("apply")]
     Apply,
     #[token("action")]

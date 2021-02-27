@@ -30,6 +30,25 @@ pub enum ControlLocalDecl {
     Instantiation(Instantiation),
     Constant(ConstantDecl),
     Action(ActionDecl),
+    Table(TableDecl),
+}
+
+#[derive(Debug)]
+pub struct TableDecl {
+    pub name: String,
+    pub properties: Vec<TableProperty>,
+}
+
+#[derive(Debug)]
+pub enum TableProperty {
+    Key(Vec<KeyElement>),
+    Actions(Vec<String>),
+}
+
+#[derive(Debug)]
+pub struct KeyElement {
+    pub expr: Expr,
+    pub name: String,
 }
 
 #[derive(Debug)]
