@@ -5,6 +5,7 @@ use crate::ast::Program;
 use crate::convert::ToGcl;
 use crate::gcl::{GclGraph, GclNode, GclPredicate};
 use crate::lexer::{LalrpopLexerIter, Token};
+use crate::optimizations::merge_simple_edges;
 use crate::to_wlp::{VariableMap, WlpMap};
 use lalrpop_util::ParseError;
 use logos::Logos;
@@ -22,6 +23,7 @@ mod ast;
 mod convert;
 mod gcl;
 mod lexer;
+mod optimizations;
 mod to_wlp;
 mod verify_wlp;
 
@@ -63,6 +65,11 @@ fn main() {
     let gcl_start_node = p4_program.to_gcl(&mut graph);
     let time_to_gcl = gcl_start.elapsed();
 
+    // Optimize GCL
+    let gcl_optimize_start = Instant::now();
+    merge_simple_edges(&mut graph);
+    let time_to_optimize_gcl = gcl_optimize_start.elapsed();
+
     // Calculate the weakest liberal precondition for each node
     let wlp_start = Instant::now();
     let (node_wlp, node_variables) = graph.to_wlp();
@@ -85,11 +92,13 @@ fn main() {
     println!(
         "\nTime to parse P4: {}ms\n\
          Time to convert to GCL: {}ms\n\
+         Time to optimize GCL: {}ms\n\
          Time to calculate WLP: {}ms\n\
          Time to calculate reachability: {}ms\n\
          Total time: {}ms",
         time_to_parse.as_millis(),
         time_to_gcl.as_millis(),
+        time_to_optimize_gcl.as_millis(),
         time_to_wlp.as_millis(),
         time_to_reachable.as_millis(),
         parse_start.elapsed().as_millis()
@@ -206,7 +215,7 @@ fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>, start
 }
 
 fn path_to(graph: &GclGraph, start_idx: NodeIndex, node_idx: NodeIndex) -> Option<Vec<NodeIndex>> {
-    petgraph::algo::all_simple_paths(graph.deref(), start_idx, node_idx, 1, None).next()
+    petgraph::algo::all_simple_paths(graph.deref(), start_idx, node_idx, 0, None).next()
 }
 
 /// Parse the P4 program. If there are errors during parsing, the program will
