@@ -41,19 +41,16 @@ impl GclGraph {
             }
 
             // Consider this node's variable assignments
-            let variables: Vec<_> = node
-                .commands
-                .iter()
-                .filter_map(|cmd| match cmd {
-                    GclCommand::Assignment(GclAssignment { name, pred }) => {
-                        let pred = pred.clone();
-                        let preds = pred.fill_in(&current_variables);
-                        Some((name.as_str(), preds))
-                    }
-                    _ => None,
-                })
-                .collect();
-            current_variables.extend(variables);
+            for cmd in &node.commands {
+                let (name, pred) = match cmd {
+                    GclCommand::Assignment(GclAssignment { name, pred }) => (name, pred),
+                    _ => continue,
+                };
+                let pred = pred.clone();
+                let preds = pred.fill_in(&current_variables);
+
+                current_variables.insert(name.as_str(), preds);
+            }
 
             // Calculate the WLP for each incoming edge
             let edge_wlps = self
