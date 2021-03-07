@@ -56,9 +56,9 @@ impl ToGcl for Program {
 
         let main_decl = self
             .declarations
-            .iter()
-            .find_map(|decl| match decl {
-                Declaration::Instantiation(instantiation) if instantiation.name == "main" => {
+            .last()
+            .and_then(|decl| match decl {
+                Declaration::Instantiation(instantiation) /*if instantiation.name == "main"*/ => {
                     Some(instantiation)
                 }
                 _ => None,

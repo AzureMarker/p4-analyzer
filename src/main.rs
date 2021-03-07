@@ -63,6 +63,7 @@ fn main() {
 
     // Analyze P4
     let (p4_program, _) = perform_binding_analysis(&p4_program).unwrap();
+    println!("After binding analysis: {:#?}", p4_program);
 
     // Convert to GCL
     let gcl_start = Instant::now();

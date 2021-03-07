@@ -11,7 +11,7 @@ pub enum Declaration {
     Instantiation(Instantiation),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StructDecl {
     pub name: String,
 }
@@ -79,7 +79,7 @@ pub struct Param {
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Direction {
     In,
     Out,
