@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate lalrpop_util;
 
+use crate::analysis::binding::perform_binding_analysis;
 use crate::ast::Program;
 use crate::convert::ToGcl;
 use crate::gcl::{GclGraph, GclNode, GclPredicate};
@@ -19,6 +20,7 @@ use std::ops::Deref;
 use std::time::Instant;
 use z3::{Config, Context, SatResult, Solver};
 
+mod analysis;
 mod ast;
 mod convert;
 mod gcl;
@@ -58,6 +60,9 @@ fn main() {
     let parse_start = Instant::now();
     let p4_program = parse(&p4_program_str);
     let time_to_parse = parse_start.elapsed();
+
+    // Analyze P4
+    let (p4_program, _) = perform_binding_analysis(&p4_program).unwrap();
 
     // Convert to GCL
     let gcl_start = Instant::now();
