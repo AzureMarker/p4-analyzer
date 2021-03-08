@@ -1,4 +1,4 @@
-//! Perform binding analysis (connect variables to declarations).
+//! Perform binding analysis (connect variables to declarations and give each a unique name).
 
 use crate::ast::{
     ActionDecl, Argument, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
@@ -7,6 +7,7 @@ use crate::ast::{
 };
 use std::collections::HashMap;
 
+/// Each variable will have a unique ID
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct VariableId(usize);
 
@@ -14,8 +15,12 @@ pub struct VariableId(usize);
 pub enum BindingError {
     /// The declaration of this variable was not found
     UnknownVar(String),
+    /// There is more than one declaration of this variable in the same scope
+    DuplicateDecl(String),
 }
 
+/// Run binding analysis on the program, creating a new program with unique
+/// variable names given to each variable and a map from new name to ID.
 pub fn perform_binding_analysis(
     program: &Program,
 ) -> Result<(Program, HashMap<String, VariableId>), BindingError> {
@@ -26,7 +31,7 @@ pub fn perform_binding_analysis(
 }
 
 /// Represents the variable names that are in scope. Each scope level has its
-/// own map in the stack. The maps convert in-program variable names into
+/// own map in the stack. The stack maps convert in-program variable names into
 /// variable IDs.
 #[derive(Default)]
 struct VariableStack {
@@ -41,6 +46,7 @@ impl VariableStack {
         Self::default()
     }
 
+    /// Get the variable ID for a given (original) variable
     fn get(&self, name: &str) -> Option<VariableId> {
         for map in self.stack.iter().rev() {
             if let Some(var) = map.get(name) {
@@ -51,22 +57,28 @@ impl VariableStack {
         None
     }
 
+    /// Get the new name of a variable from its ID
     fn get_name(&self, id: VariableId) -> Option<&str> {
         self.id_to_name.get(&id).map(String::as_str)
     }
 
+    /// Get the new name of a variable from its old name
     fn get_new_name(&self, old_name: &str) -> Option<&str> {
         let id = self.get(old_name)?;
         self.get_name(id)
     }
 
+    /// Get the new name of a variable or return an error if it doesn't exist
     fn get_new_name_or_err(&self, old_name: &str) -> Result<String, BindingError> {
         self.get_new_name(old_name)
             .map(str::to_string)
             .ok_or_else(|| BindingError::UnknownVar(old_name.to_string()))
     }
 
-    fn insert(&mut self, name: String) -> String {
+    /// Insert a variable into the map and return a unique name for it (its new
+    /// name). If the variable has already been declared in this same scope, an
+    /// error is returned.
+    fn insert(&mut self, name: String) -> Result<String, BindingError> {
         if self.stack.is_empty() {
             self.stack.push(HashMap::new());
         }
@@ -74,22 +86,33 @@ impl VariableStack {
         let id = VariableId(self.next_id);
         let new_name = format!("var_{}__{}", self.next_id, name);
         self.next_id += 1;
-        self.stack.last_mut().unwrap().insert(name, id);
+
+        let map = self.stack.last_mut().unwrap();
+
+        if map.contains_key(&name) {
+            return Err(BindingError::DuplicateDecl(name));
+        }
+
+        map.insert(name, id);
         self.name_to_id.insert(new_name.clone(), id);
         self.id_to_name.insert(id, new_name.clone());
 
-        new_name
+        Ok(new_name)
     }
 
+    /// Push a scope (new variable map) onto the stack
     fn push_scope(&mut self) {
         self.stack.push(HashMap::new());
     }
 
+    /// Pop a scope (variable map) from the stack
     fn pop_scope(&mut self) {
         self.stack.pop();
     }
 }
 
+/// Trait for performing binding analysis on an AST node. A new node will be
+/// returned which uses a unique name for each variable.
 trait BindingAnalysis: Sized {
     fn binding_analysis(&self, scope: &mut VariableStack) -> Result<Self, BindingError>;
 }
@@ -142,13 +165,13 @@ impl BindingAnalysis for Program {
 impl BindingAnalysis for ControlDecl {
     fn binding_analysis(&self, scope: &mut VariableStack) -> Result<Self, BindingError> {
         // TODO: check name against types
-        scope.push_scope();
 
+        scope.push_scope();
         let params = self.params.binding_analysis(scope)?;
         let local_decls = self.local_decls.binding_analysis(scope)?;
         let apply_body = self.apply_body.binding_analysis(scope)?;
-
         scope.pop_scope();
+
         Ok(ControlDecl {
             name: self.name.clone(),
             params,
@@ -161,7 +184,7 @@ impl BindingAnalysis for ControlDecl {
 impl BindingAnalysis for Param {
     fn binding_analysis(&self, scope: &mut VariableStack) -> Result<Self, BindingError> {
         // TODO: check type ref
-        let new_name = scope.insert(self.name.clone());
+        let new_name = scope.insert(self.name.clone())?;
 
         Ok(Param {
             ty: self.ty.clone(),
@@ -244,7 +267,7 @@ impl BindingAnalysis for ActionDecl {
         let body = self.body.binding_analysis(scope)?;
         scope.pop_scope();
 
-        let new_name = scope.insert(self.name.clone());
+        let new_name = scope.insert(self.name.clone())?;
 
         Ok(ActionDecl {
             name: new_name,
@@ -257,7 +280,7 @@ impl BindingAnalysis for ActionDecl {
 impl BindingAnalysis for TableDecl {
     fn binding_analysis(&self, scope: &mut VariableStack) -> Result<Self, BindingError> {
         let properties = self.properties.binding_analysis(scope)?;
-        let new_name = scope.insert(self.name.clone());
+        let new_name = scope.insert(self.name.clone())?;
 
         Ok(TableDecl {
             name: new_name,
@@ -294,7 +317,7 @@ impl BindingAnalysis for KeyElement {
 impl BindingAnalysis for ConstantDecl {
     fn binding_analysis(&self, scope: &mut VariableStack) -> Result<Self, BindingError> {
         let new_value = self.value.binding_analysis(scope)?;
-        let new_name = scope.insert(self.name.clone());
+        let new_name = scope.insert(self.name.clone())?;
 
         // todo: check type
 
@@ -309,7 +332,7 @@ impl BindingAnalysis for ConstantDecl {
 impl BindingAnalysis for VariableDecl {
     fn binding_analysis(&self, scope: &mut VariableStack) -> Result<Self, BindingError> {
         let new_value = self.value.binding_analysis(scope)?;
-        let new_name = scope.insert(self.name.clone());
+        let new_name = scope.insert(self.name.clone())?;
 
         // todo: check type
 
@@ -326,7 +349,7 @@ impl BindingAnalysis for Instantiation {
         // todo: check type
 
         let args = self.args.binding_analysis(scope)?;
-        let new_name = scope.insert(self.name.clone());
+        let new_name = scope.insert(self.name.clone())?;
 
         Ok(Instantiation {
             ty: self.ty.clone(),
