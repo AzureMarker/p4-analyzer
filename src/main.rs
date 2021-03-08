@@ -3,10 +3,10 @@ extern crate lalrpop_util;
 
 use crate::analysis::binding::perform_binding_analysis;
 use crate::ast::Program;
-use crate::convert::ToGcl;
 use crate::gcl::{GclGraph, GclNode, GclPredicate};
 use crate::lexer::{LalrpopLexerIter, Token};
 use crate::optimizations::merge_simple_edges;
+use crate::to_gcl::ToGcl;
 use crate::to_wlp::{VariableMap, WlpMap};
 use lalrpop_util::ParseError;
 use logos::Logos;
@@ -22,10 +22,10 @@ use z3::{Config, Context, SatResult, Solver};
 
 mod analysis;
 mod ast;
-mod convert;
 mod gcl;
 mod lexer;
 mod optimizations;
+mod to_gcl;
 mod to_wlp;
 mod verify_wlp;
 
