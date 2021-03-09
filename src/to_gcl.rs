@@ -602,12 +602,12 @@ impl ToGcl for FunctionCall {
     fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
         // TODO: handle setting arguments and verifying args have values
         let function_range = graph
-            .get_function(&self.name)
-            .unwrap_or_else(|| panic!("Unable to find function {}", self.name));
+            .get_function(&self.target)
+            .unwrap_or_else(|| panic!("Unable to find function {}", self.target));
 
         let start_name = graph.create_name("func_call_start");
         let end_name = graph.create_name("func_call_end");
-        let ret_target_var = format!("func_ret_target__{}", self.name);
+        let ret_target_var = format!("func_ret_target__{}", self.target);
         let start_idx = graph.add_node(GclNode {
             name: start_name,
             commands: vec![GclCommand::Assignment(GclAssignment {

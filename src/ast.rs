@@ -127,7 +127,7 @@ pub struct Assignment {
 
 #[derive(Clone, Debug)]
 pub struct FunctionCall {
-    pub name: String,
+    pub target: String,
     pub arguments: Vec<Argument>,
 }
 

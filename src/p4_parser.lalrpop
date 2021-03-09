@@ -87,8 +87,8 @@ ConstantDecl: ConstantDecl = "const" <ty:TypeRef> <name:Identifier> "=" <value:E
 Assignment: Assignment = <name:Identifier> "=" <value:Expr> ";"
     => Assignment { name, value };
 
-FunctionCall: FunctionCall = <name:Identifier> "(" <arguments:Comma<Argument>> ")" ";"
-    => FunctionCall { name, arguments };
+FunctionCall: FunctionCall = <target:Identifier> "(" <arguments:Comma<Argument>> ")" ";"
+    => FunctionCall { target, arguments };
 
 IfStatement: IfStatement = {
     // To avoid ambiguity, only allow block statements in then/else
@@ -106,8 +106,8 @@ Expr: Expr = {
     #[precedence(level = "1")]
     "!" <Expr> => Expr::Negation(Box::new(<>)),
     #[precedence(level = "1")]
-    <name:Identifier> "(" <arguments:Comma<Argument>> ")"
-        => Expr::FunctionCall(FunctionCall { name, arguments }),
+    <target:Identifier> "(" <arguments:Comma<Argument>> ")"
+        => Expr::FunctionCall(FunctionCall { target, arguments }),
 
     #[precedence(level = "2")]
     #[assoc(side = "left")]
