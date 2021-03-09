@@ -23,6 +23,7 @@ use z3::{Config, Context, SatResult, Solver};
 mod analysis;
 mod ast;
 mod gcl;
+mod ir;
 mod lexer;
 mod optimizations;
 mod to_gcl;
