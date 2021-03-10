@@ -1,19 +1,39 @@
-#[derive(Debug)]
-pub struct Program {
-    pub declarations: Vec<Declaration>,
-}
+// Note: types are sorted alphabetically
 
 #[derive(Debug)]
-pub enum Declaration {
-    Struct(StructDecl),
-    Control(ControlDecl),
-    Constant(ConstantDecl),
-    Instantiation(Instantiation),
+pub struct ActionDecl {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub body: BlockStatement,
 }
 
 #[derive(Clone, Debug)]
-pub struct StructDecl {
+pub enum Argument {
+    Value(Expr),
+    Named(String, Expr),
+    DontCare,
+}
+
+#[derive(Clone, Debug)]
+pub struct Assignment {
     pub name: String,
+    pub value: Expr,
+}
+
+#[derive(Clone, Debug)]
+pub enum BaseType {
+    Bool,
+    // TODO: Add more base types
+}
+
+#[derive(Clone, Debug)]
+pub struct BlockStatement(pub Vec<StatementOrDecl>);
+
+#[derive(Clone, Debug)]
+pub struct ConstantDecl {
+    pub ty: TypeRef,
+    pub name: String,
+    pub value: Expr,
 }
 
 #[derive(Debug)]
@@ -34,49 +54,11 @@ pub enum ControlLocalDecl {
 }
 
 #[derive(Debug)]
-pub struct TableDecl {
-    pub name: String,
-    pub properties: Vec<TableProperty>,
-}
-
-#[derive(Debug)]
-pub enum TableProperty {
-    Key(Vec<KeyElement>),
-    Actions(Vec<String>),
-}
-
-#[derive(Debug)]
-pub struct KeyElement {
-    pub expr: Expr,
-    pub name: String,
-}
-
-#[derive(Debug)]
-pub struct ActionDecl {
-    pub name: String,
-    pub params: Vec<Param>,
-    pub body: BlockStatement,
-}
-
-#[derive(Clone, Debug)]
-pub struct Instantiation {
-    pub ty: TypeRef,
-    pub args: Vec<Argument>,
-    pub name: String,
-}
-
-#[derive(Clone, Debug)]
-pub enum Argument {
-    Value(Expr),
-    Named(String, Expr),
-    DontCare,
-}
-
-#[derive(Debug)]
-pub struct Param {
-    pub direction: Direction,
-    pub ty: TypeRef,
-    pub name: String,
+pub enum Declaration {
+    Struct(StructDecl),
+    Control(ControlDecl),
+    Constant(ConstantDecl),
+    Instantiation(Instantiation),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -87,7 +69,52 @@ pub enum Direction {
 }
 
 #[derive(Clone, Debug)]
-pub struct BlockStatement(pub Vec<StatementOrDecl>);
+pub enum Expr {
+    Bool(bool),
+    Var(String),
+    And(Box<Expr>, Box<Expr>),
+    Or(Box<Expr>, Box<Expr>),
+    Negation(Box<Expr>),
+    FunctionCall(FunctionCall),
+}
+
+#[derive(Clone, Debug)]
+pub struct FunctionCall {
+    pub target: String,
+    pub arguments: Vec<Argument>,
+}
+
+#[derive(Clone, Debug)]
+pub struct IfStatement {
+    pub condition: Expr,
+    pub then_case: BlockStatement,
+    pub else_case: Option<BlockStatement>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Instantiation {
+    pub ty: TypeRef,
+    pub args: Vec<Argument>,
+    pub name: String,
+}
+
+#[derive(Debug)]
+pub struct KeyElement {
+    pub expr: Expr,
+    pub name: String,
+}
+
+#[derive(Debug)]
+pub struct Param {
+    pub direction: Direction,
+    pub ty: TypeRef,
+    pub name: String,
+}
+
+#[derive(Debug)]
+pub struct Program {
+    pub declarations: Vec<Declaration>,
+}
 
 #[derive(Clone, Debug)]
 pub enum Statement {
@@ -106,46 +133,20 @@ pub enum StatementOrDecl {
 }
 
 #[derive(Clone, Debug)]
-pub struct VariableDecl {
-    pub ty: TypeRef,
+pub struct StructDecl {
     pub name: String,
-    pub value: Option<Expr>,
 }
 
-#[derive(Clone, Debug)]
-pub struct ConstantDecl {
-    pub ty: TypeRef,
+#[derive(Debug)]
+pub struct TableDecl {
     pub name: String,
-    pub value: Expr,
+    pub properties: Vec<TableProperty>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Assignment {
-    pub name: String,
-    pub value: Expr,
-}
-
-#[derive(Clone, Debug)]
-pub struct FunctionCall {
-    pub target: String,
-    pub arguments: Vec<Argument>,
-}
-
-#[derive(Clone, Debug)]
-pub struct IfStatement {
-    pub condition: Expr,
-    pub then_case: BlockStatement,
-    pub else_case: Option<BlockStatement>,
-}
-
-#[derive(Clone, Debug)]
-pub enum Expr {
-    Bool(bool),
-    Var(String),
-    And(Box<Expr>, Box<Expr>),
-    Or(Box<Expr>, Box<Expr>),
-    Negation(Box<Expr>),
-    FunctionCall(FunctionCall),
+#[derive(Debug)]
+pub enum TableProperty {
+    Key(Vec<KeyElement>),
+    Actions(Vec<String>),
 }
 
 #[derive(Clone, Debug)]
@@ -155,7 +156,8 @@ pub enum TypeRef {
 }
 
 #[derive(Clone, Debug)]
-pub enum BaseType {
-    Bool,
-    // TODO: Add more base types
+pub struct VariableDecl {
+    pub ty: TypeRef,
+    pub name: String,
+    pub value: Option<Expr>,
 }

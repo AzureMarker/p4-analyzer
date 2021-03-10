@@ -2,9 +2,13 @@
 
 use crate::ast::Direction;
 
+/****************************** IDs ******************************/
+
 /// Each variable will have a unique ID
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VariableId(pub usize);
+
+/****************************** Types ******************************/
 
 #[derive(Clone, Debug)]
 pub enum IrType {
@@ -47,12 +51,8 @@ pub struct IrControlType {
     pub inputs: Vec<(IrType, Direction)>,
 }
 
-#[derive(Clone, Debug)]
-pub struct IrFunctionCall {
-    pub result_ty: IrType,
-    pub target: VariableId,
-    pub arguments: Vec<IrArgument>,
-}
+/****************************** Nodes ******************************/
+// Note: node types are sorted alphabetically
 
 #[derive(Clone, Debug)]
 pub enum IrArgument {
@@ -62,12 +62,7 @@ pub enum IrArgument {
 }
 
 #[derive(Clone, Debug)]
-pub struct IrIfStatement {
-    pub ty: IrType,
-    pub condition: IrExpr,
-    pub then_case: BlockStatement,
-    pub else_case: Option<BlockStatement>,
-}
+pub struct IrBlockStatement(Vec<IrStatementOrDecl>);
 
 #[derive(Clone, Debug)]
 pub struct IrExpr {
@@ -84,3 +79,21 @@ pub enum IrExprData {
     Negation(Box<IrExpr>),
     FunctionCall(IrFunctionCall),
 }
+
+#[derive(Clone, Debug)]
+pub struct IrFunctionCall {
+    pub result_ty: IrType,
+    pub target: VariableId,
+    pub arguments: Vec<IrArgument>,
+}
+
+#[derive(Clone, Debug)]
+pub struct IrIfStatement {
+    pub ty: IrType,
+    pub condition: IrExpr,
+    pub then_case: IrBlockStatement,
+    pub else_case: Option<IrBlockStatement>,
+}
+
+#[derive(Clone, Debug)]
+pub enum IrStatementOrDecl {}
