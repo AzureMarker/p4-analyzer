@@ -61,7 +61,7 @@ pub enum Declaration {
     Instantiation(Instantiation),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Direction {
     In,
     Out,
@@ -101,7 +101,7 @@ pub struct Instantiation {
 #[derive(Debug)]
 pub struct KeyElement {
     pub expr: Expr,
-    pub name: String,
+    pub match_kind: String,
 }
 
 #[derive(Debug)]

@@ -1,13 +1,13 @@
 #[macro_use]
 extern crate lalrpop_util;
 
-use crate::analysis::binding::perform_binding_analysis;
 use crate::ast::Program;
 use crate::gcl::{GclGraph, GclNode, GclPredicate};
 use crate::lexer::{LalrpopLexerIter, Token};
 use crate::optimizations::merge_simple_edges;
 use crate::to_gcl::ToGcl;
 use crate::to_wlp::{VariableMap, WlpMap};
+use crate::type_checker::perform_binding_analysis;
 use lalrpop_util::ParseError;
 use logos::Logos;
 use petgraph::dot::Dot;
@@ -20,7 +20,6 @@ use std::ops::Deref;
 use std::time::Instant;
 use z3::{Config, Context, SatResult, Solver};
 
-mod analysis;
 mod ast;
 mod gcl;
 mod ir;
@@ -28,6 +27,7 @@ mod lexer;
 mod optimizations;
 mod to_gcl;
 mod to_wlp;
+mod type_checker;
 mod verify_wlp;
 
 lalrpop_mod!(

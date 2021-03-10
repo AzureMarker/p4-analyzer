@@ -56,7 +56,7 @@ TableProperty: TableProperty = {
     "actions" "=" "{" <actions:Identifier*> ";" "}" => TableProperty::Actions(<>),
 };
 
-KeyElement: KeyElement = <expr:Expr> ":" <name:Identifier> ";" => KeyElement { expr, name };
+KeyElement: KeyElement = <expr:Expr> ":" <match_kind:Identifier> ";" => KeyElement { expr, match_kind };
 
 Statement: Statement = {
     BlockStatement => Statement::Block(<>),
