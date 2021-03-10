@@ -1,11 +1,12 @@
 //! Convert P4 to GCL
 
-use crate::ast::{
-    ActionDecl, Assignment, BlockStatement, ConstantDecl, ControlDecl, ControlLocalDecl,
-    Declaration, Expr, FunctionCall, IfStatement, Instantiation, Program, Statement,
-    StatementOrDecl, TypeRef, VariableDecl,
-};
 use crate::gcl::{GclAssignment, GclCommand, GclGraph, GclNode, GclNodeRange, GclPredicate};
+use crate::ir::{
+    IrActionDecl, IrAssignment, IrBlockStatement, IrControlDecl, IrControlLocalDecl, IrDeclaration,
+    IrExpr, IrExprData, IrFunctionCall, IrIfStatement, IrInstantiation, IrProgram, IrStatement,
+    IrStatementOrDecl, IrStructType, IrType, IrVariableDecl,
+};
+use crate::type_checker::ProgramMetadata;
 use either::Either;
 use petgraph::graph::NodeIndex;
 
@@ -13,14 +14,14 @@ use petgraph::graph::NodeIndex;
 pub trait ToGcl {
     type Output;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output;
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output;
 }
 
-impl ToGcl for Program {
+impl ToGcl for IrProgram {
     /// The starting node
     type Output = NodeIndex;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         let start_idx = graph.add_node(GclNode {
             name: "start".to_string(),
             commands: Vec::new(),
@@ -35,19 +36,19 @@ impl ToGcl for Program {
 
         for decl in &self.declarations {
             match decl {
-                Declaration::Struct(_) => {} // todo
-                Declaration::Constant(const_decl) => {
+                IrDeclaration::Struct(_) => {} // todo
+                IrDeclaration::Constant(const_decl) => {
                     // Add onto the node chain
-                    let range = const_decl.to_gcl(graph);
+                    let range = const_decl.to_gcl(graph, metadata);
                     graph.add_edge(node_range.end, range.start, GclPredicate::default());
                     node_range.end = range.end;
                 }
                 // The nodes are added to the graph automatically
-                Declaration::Control(control) => {
-                    control_idx = Some(control.to_gcl(graph).start);
+                IrDeclaration::Control(control) => {
+                    control_idx = Some(control.to_gcl(graph, metadata).start);
                 }
-                Declaration::Instantiation(instantiation) => {
-                    commands.push(instantiation.to_gcl(graph))
+                IrDeclaration::Instantiation(instantiation) => {
+                    commands.push(instantiation.to_gcl(graph, metadata))
                 }
             }
         }
@@ -58,14 +59,14 @@ impl ToGcl for Program {
             .declarations
             .last()
             .and_then(|decl| match decl {
-                Declaration::Instantiation(instantiation) /*if instantiation.name == "main"*/ => {
+                IrDeclaration::Instantiation(instantiation) /*if instantiation.name == "main"*/ => {
                     Some(instantiation)
                 }
                 _ => None,
             })
             .expect("Missing main declaration");
 
-        if !matches!(&main_decl.ty, TypeRef::Identifier(ident) if ident == "V1Switch") {
+        if !matches!(&main_decl.ty, IrType::Struct(IrStructType { name }) if name == "V1Switch") {
             panic!(
                 "Expected type of main to be 'V1Switch', got '{:?}'",
                 main_decl.ty
@@ -84,37 +85,34 @@ impl ToGcl for Program {
     }
 }
 
-impl ToGcl for ControlDecl {
+impl ToGcl for IrControlDecl {
     type Output = GclNodeRange;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         let mut commands = Vec::new();
 
         // Collect all of the top level local declarations (e.g. actions) and
         // local declarations (e.g. variables).
         for local_decl in &self.local_decls {
             match local_decl {
-                ControlLocalDecl::Variable(var_decl) => {
-                    commands.push(StatementOrDecl::VariableDecl(var_decl.clone()));
+                IrControlLocalDecl::Variable(var_decl) => {
+                    commands.push(IrStatementOrDecl::VariableDecl(var_decl.clone()));
                 }
-                ControlLocalDecl::Instantiation(instantiation) => {
-                    commands.push(StatementOrDecl::Instantiation(instantiation.clone()))
+                IrControlLocalDecl::Instantiation(instantiation) => {
+                    commands.push(IrStatementOrDecl::Instantiation(instantiation.clone()))
                 }
-                ControlLocalDecl::Constant(const_decl) => {
-                    commands.push(StatementOrDecl::ConstantDecl(const_decl.clone()))
-                }
-                ControlLocalDecl::Action(action_decl) => {
-                    let action_range = action_decl.to_gcl(graph);
+                IrControlLocalDecl::Action(action_decl) => {
+                    let action_range = action_decl.to_gcl(graph, metadata);
 
                     // Register the action under the namespace of this control block
                     graph.register_function(
                         // FIXME: Check if we actually need namespacing
                         // format!("{}::{}", self.name, action_decl.name),
-                        action_decl.name.clone(),
+                        action_decl.id,
                         action_range,
                     );
                 }
-                ControlLocalDecl::Table(_table_decl) => {
+                IrControlLocalDecl::Table(_table_decl) => {
                     // TODO
                 }
             }
@@ -124,51 +122,23 @@ impl ToGcl for ControlDecl {
         commands.extend_from_slice(&self.apply_body.0);
 
         // Create the block node
-        let block_range = BlockStatement(commands).to_gcl(graph);
+        let block_range = IrBlockStatement(commands).to_gcl(graph, metadata);
 
         // Rename the block node start
-        graph.node_weight_mut(block_range.start).unwrap().name = format!("control__{}", self.name);
+        // TODO: replace with type id
+        graph.node_weight_mut(block_range.start).unwrap().name = format!("control__{}", "todo");
 
         block_range
     }
 }
 
-impl ToGcl for ConstantDecl {
+impl ToGcl for IrActionDecl {
     type Output = GclNodeRange;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        let (pred, expr_range) = self.value.to_gcl(graph);
-        let name = graph.create_name(&format!("const_decl__{}", self.name));
-
-        let node_idx = graph.add_node(GclNode {
-            name,
-            commands: vec![
-                GclCommand::Assignment(GclAssignment {
-                    name: format!("has_value__{}", self.name),
-                    pred: GclPredicate::Bool(true),
-                }),
-                GclCommand::Assignment(GclAssignment {
-                    name: format!("var__{}", self.name),
-                    pred,
-                }),
-            ],
-        });
-        graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
-
-        GclNodeRange {
-            start: expr_range.start,
-            end: node_idx,
-        }
-    }
-}
-
-impl ToGcl for ActionDecl {
-    type Output = GclNodeRange;
-
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        let body_range = self.body.to_gcl(graph);
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
+        let body_range = self.body.to_gcl(graph, metadata);
         let start_node_idx = graph.add_node(GclNode {
-            name: format!("action__{}", self.name),
+            name: format!("action__{}", self.id),
             // FIXME: remove ret hack
             commands: vec![GclCommand::Assignment(GclAssignment {
                 name: "ret".to_string(),
@@ -187,10 +157,10 @@ impl ToGcl for ActionDecl {
     }
 }
 
-impl ToGcl for BlockStatement {
+impl ToGcl for IrBlockStatement {
     type Output = GclNodeRange;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         let mut current_commands: Vec<GclCommand> = Vec::new();
         let mut block_start_end: Option<GclNodeRange> = None;
 
@@ -224,7 +194,7 @@ impl ToGcl for BlockStatement {
         // Expand each statement and collect all of the nodes (e.g. from if
         // statements) and simple commands (e.g. variable declarations).
         for statement_or_decl in &self.0 {
-            match statement_or_decl.to_gcl(graph) {
+            match statement_or_decl.to_gcl(graph, metadata) {
                 Either::Left(command) => {
                     current_commands.push(command);
                 }
@@ -266,55 +236,59 @@ impl ToGcl for BlockStatement {
     }
 }
 
-impl ToGcl for StatementOrDecl {
+impl ToGcl for IrStatementOrDecl {
     type Output = Either<GclCommand, GclNodeRange>;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         match self {
-            StatementOrDecl::Statement(statement) => Either::Right(statement.to_gcl(graph)),
-            StatementOrDecl::VariableDecl(var_decl) => Either::Right(var_decl.to_gcl(graph)),
-            StatementOrDecl::ConstantDecl(const_decl) => Either::Right(const_decl.to_gcl(graph)),
-            StatementOrDecl::Instantiation(instantiation) => {
-                Either::Left(instantiation.to_gcl(graph))
+            IrStatementOrDecl::Statement(statement) => {
+                Either::Right(statement.to_gcl(graph, metadata))
+            }
+            IrStatementOrDecl::VariableDecl(var_decl) => {
+                Either::Right(var_decl.to_gcl(graph, metadata))
+            }
+            IrStatementOrDecl::Instantiation(instantiation) => {
+                Either::Left(instantiation.to_gcl(graph, metadata))
             }
         }
     }
 }
 
-impl ToGcl for Statement {
+impl ToGcl for IrStatement {
     type Output = GclNodeRange;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         match self {
-            Statement::Block(block) => block.to_gcl(graph),
-            Statement::If(if_statement) => if_statement.to_gcl(graph),
-            Statement::Assignment(assignment) => assignment.to_gcl(graph),
-            Statement::FunctionCall(func_call) => func_call.to_gcl(graph),
+            IrStatement::Block(block) => block.to_gcl(graph, metadata),
+            IrStatement::If(if_statement) => if_statement.to_gcl(graph, metadata),
+            IrStatement::Assignment(assignment) => assignment.to_gcl(graph, metadata),
+            IrStatement::FunctionCall(func_call) => func_call.to_gcl(graph, metadata),
         }
     }
 }
 
-impl ToGcl for VariableDecl {
+impl ToGcl for IrVariableDecl {
     type Output = GclNodeRange;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        let mut commands = vec![
-            GclCommand::Assignment(GclAssignment {
-                name: format!("declared_var__{}", self.name),
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
+        let mut commands = vec![GclCommand::Assignment(GclAssignment {
+            name: format!("has_value__{}", self.id),
+            pred: GclPredicate::Bool(self.value.is_some()),
+        })];
+        let name = graph.create_name(&format!("var_decl__{}", self.id));
+
+        if !self.is_const {
+            commands.push(GclCommand::Assignment(GclAssignment {
+                name: format!("declared_var__{}", self.id),
                 pred: GclPredicate::Bool(true),
-            }),
-            GclCommand::Assignment(GclAssignment {
-                name: format!("has_value__{}", self.name),
-                pred: GclPredicate::Bool(self.value.is_some()),
-            }),
-        ];
-        let name = graph.create_name(&format!("var_decl__{}", self.name));
+            }));
+        }
 
         match self.value.as_ref() {
             Some(value) => {
-                let (pred, expr_range) = value.to_gcl(graph);
+                let (pred, expr_range) = value.to_gcl(graph, metadata);
                 commands.push(GclCommand::Assignment(GclAssignment {
-                    name: format!("var__{}", self.name),
+                    name: format!("var__{}", self.id),
                     pred,
                 }));
 
@@ -338,32 +312,32 @@ impl ToGcl for VariableDecl {
     }
 }
 
-impl ToGcl for Instantiation {
+impl ToGcl for IrInstantiation {
     type Output = GclCommand;
 
-    fn to_gcl(&self, _graph: &mut GclGraph) -> Self::Output {
+    fn to_gcl(&self, _graph: &mut GclGraph, _metadata: &ProgramMetadata) -> Self::Output {
         GclCommand::Assignment(GclAssignment {
-            name: format!("has_value__{}", self.name),
+            name: format!("has_value__{}", self.id),
             pred: GclPredicate::Bool(true),
         })
     }
 }
 
-impl ToGcl for Assignment {
+impl ToGcl for IrAssignment {
     /// The GCL node
     type Output = GclNodeRange;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        let (pred, expr_range) = self.value.to_gcl(graph);
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
+        let (pred, expr_range) = self.value.to_gcl(graph, metadata);
         let node = GclNode {
-            name: graph.create_name(&format!("assignment__{}", self.name)),
+            name: graph.create_name(&format!("assignment__{}", self.var)),
             commands: vec![
                 GclCommand::Assignment(GclAssignment {
-                    name: format!("has_value__{}", self.name),
+                    name: format!("has_value__{}", self.var),
                     pred: GclPredicate::Bool(true),
                 }),
                 GclCommand::Assignment(GclAssignment {
-                    name: format!("var__{}", self.name),
+                    name: format!("var__{}", self.var),
                     pred,
                 }),
             ],
@@ -373,7 +347,7 @@ impl ToGcl for Assignment {
 
         let assert_node_idx = make_assert_node(
             graph,
-            GclPredicate::Var(format!("declared_var__{}", self.name)),
+            GclPredicate::Var(format!("declared_var__{}", self.var)),
             expr_range.start,
         );
 
@@ -384,10 +358,10 @@ impl ToGcl for Assignment {
     }
 }
 
-impl ToGcl for IfStatement {
+impl ToGcl for IrIfStatement {
     type Output = GclNodeRange;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         // Create the end node first so we can refer to its index
         let end_node = GclNode {
             name: graph.create_name("if_end"),
@@ -396,15 +370,18 @@ impl ToGcl for IfStatement {
         let end_node_idx = graph.add_node(end_node);
 
         // Calculate the if condition predicate and nodes
-        let (pred, cond_range) = self.condition.to_gcl(graph);
+        let (pred, cond_range) = self.condition.to_gcl(graph, metadata);
         let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
 
         // Convert the then and else branches to GCL
         let GclNodeRange {
             start: then_node_start,
             end: then_node_end,
-        } = self.then_case.to_gcl(graph);
-        let else_node_range = self.else_case.as_ref().map(|stmt| stmt.to_gcl(graph));
+        } = self.then_case.to_gcl(graph, metadata);
+        let else_node_range = self
+            .else_case
+            .as_ref()
+            .map(|stmt| stmt.to_gcl(graph, metadata));
         let else_node_idx = if let Some(else_range) = else_node_range {
             else_range.start
         } else {
@@ -428,14 +405,14 @@ impl ToGcl for IfStatement {
     }
 }
 
-impl ToGcl for Expr {
+impl ToGcl for IrExpr {
     /// The predicate which holds the boolean value of the expression, plus the
     /// nodes that calculate the predicate.
     type Output = (GclPredicate, GclNodeRange);
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
-        match self {
-            Expr::Bool(b) => {
+    fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
+        match &self.data {
+            IrExprData::Bool(b) => {
                 let (name, node_idx) = Self::single_assignment_node(graph, GclPredicate::Bool(*b));
 
                 (
@@ -446,7 +423,7 @@ impl ToGcl for Expr {
                     },
                 )
             }
-            Expr::Var(name) => {
+            IrExprData::Var(name) => {
                 let (expr_name, node_idx) = Self::single_assignment_node(
                     graph,
                     GclPredicate::Var(format!("var__{}", name)),
@@ -465,10 +442,14 @@ impl ToGcl for Expr {
                     },
                 )
             }
-            Expr::And(left, right) => Self::short_circuit_logic(graph, left, right, true),
-            Expr::Or(left, right) => Self::short_circuit_logic(graph, left, right, false),
-            Expr::Negation(inner) => {
-                let (inner_pred, inner_range) = inner.to_gcl(graph);
+            IrExprData::And(left, right) => {
+                Self::short_circuit_logic(graph, metadata, left, right, true)
+            }
+            IrExprData::Or(left, right) => {
+                Self::short_circuit_logic(graph, metadata, left, right, false)
+            }
+            IrExprData::Negation(inner) => {
+                let (inner_pred, inner_range) = inner.to_gcl(graph, metadata);
                 let name = graph.create_name("expr");
                 let node_idx = graph.add_node(GclNode {
                     name: name.clone(),
@@ -487,8 +468,8 @@ impl ToGcl for Expr {
                     },
                 )
             }
-            Expr::FunctionCall(func_call) => {
-                let func_range = func_call.to_gcl(graph);
+            IrExprData::FunctionCall(func_call) => {
+                let func_range = func_call.to_gcl(graph, metadata);
                 let name = graph.create_name("expr");
                 let node = GclNode {
                     name: graph.create_name("expr_func"),
@@ -512,7 +493,7 @@ impl ToGcl for Expr {
     }
 }
 
-impl Expr {
+impl IrExpr {
     /// Create a node which just assigns a predicate to a variable
     fn single_assignment_node(graph: &mut GclGraph, value: GclPredicate) -> (String, NodeIndex) {
         let name = graph.create_name("expr");
@@ -531,12 +512,13 @@ impl Expr {
     /// implementations are generalized by this function.
     fn short_circuit_logic(
         graph: &mut GclGraph,
-        left: &Expr,
-        right: &Expr,
+        metadata: &ProgramMetadata,
+        left: &IrExpr,
+        right: &IrExpr,
         is_add: bool,
     ) -> (GclPredicate, GclNodeRange) {
-        let (left_pred, left_range) = left.to_gcl(graph);
-        let (right_pred, right_range) = right.to_gcl(graph);
+        let (left_pred, left_range) = left.to_gcl(graph, metadata);
+        let (right_pred, right_range) = right.to_gcl(graph, metadata);
         let name = graph.create_name("expr");
         let op_name = if is_add { "add" } else { "or" };
 
@@ -596,13 +578,13 @@ impl Expr {
     }
 }
 
-impl ToGcl for FunctionCall {
+impl ToGcl for IrFunctionCall {
     type Output = GclNodeRange;
 
-    fn to_gcl(&self, graph: &mut GclGraph) -> Self::Output {
+    fn to_gcl(&self, graph: &mut GclGraph, _metadata: &ProgramMetadata) -> Self::Output {
         // TODO: handle setting arguments and verifying args have values
         let function_range = graph
-            .get_function(&self.target)
+            .get_function(self.target)
             .unwrap_or_else(|| panic!("Unable to find function {}", self.target));
 
         let start_name = graph.create_name("func_call_start");

@@ -13,8 +13,8 @@ use crate::ir::{
     IrActionDecl, IrArgument, IrAssignment, IrBaseType, IrBlockStatement, IrControlDecl,
     IrControlLocalDecl, IrDeclaration, IrExpr, IrExprData, IrFunctionCall, IrFunctionType,
     IrIfStatement, IrInstantiation, IrKeyElement, IrParam, IrProgram, IrStatement,
-    IrStatementOrDecl, IrStructDecl, IrTableDecl, IrTableProperty, IrType, IrVariableDecl,
-    VariableId,
+    IrStatementOrDecl, IrStructDecl, IrStructType, IrTableDecl, IrTableProperty, IrType,
+    IrVariableDecl, VariableId,
 };
 
 #[derive(Debug)]
@@ -33,13 +33,26 @@ pub enum TypeCheckError {
 
 /// Run binding analysis on the program, creating a new program with unique
 /// variable names given to each variable and a map from new name to ID.
-pub fn perform_binding_analysis(
+pub fn run_type_checking(
     program: &Program,
-) -> Result<(IrProgram, HashMap<VariableId, IrType>), TypeCheckError> {
+) -> Result<(IrProgram, ProgramMetadata), TypeCheckError> {
     let mut env = EnvironmentStack::new();
     let new_program = program.type_check(&mut env)?;
 
-    Ok((new_program, env.var_tys))
+    Ok((new_program, env.into()))
+}
+
+/// Holds some metadata about the program, such as the type of each variable.
+pub struct ProgramMetadata {
+    pub var_types: HashMap<VariableId, IrType>,
+}
+
+impl From<EnvironmentStack> for ProgramMetadata {
+    fn from(env: EnvironmentStack) -> Self {
+        Self {
+            var_types: env.var_tys,
+        }
+    }
 }
 
 /// Maps AST identifiers such as variable names to semantic information for
@@ -372,8 +385,9 @@ impl TypeCheck for TypeRef {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         match self {
             TypeRef::Base(base_ty) => Ok(IrType::Base(base_ty.type_check(env)?)),
-            TypeRef::Identifier(_) => {
-                todo!()
+            TypeRef::Identifier(name) => {
+                // FIXME
+                Ok(IrType::Struct(IrStructType { name: name.clone() }))
             }
         }
     }
@@ -382,7 +396,7 @@ impl TypeCheck for TypeRef {
 impl TypeCheck for BaseType {
     type IrNode = IrBaseType;
 
-    fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
+    fn type_check(&self, _env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         match self {
             BaseType::Bool => Ok(IrBaseType::Bool),
         }
@@ -464,9 +478,10 @@ impl TypeCheck for Assignment {
 
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let (id, ty) = env.get_var_or_err(&self.name)?;
+        let ty = ty.clone();
         let value = self.value.type_check(env)?;
 
-        assert_ty(&value.ty, ty)?;
+        assert_ty(&value.ty, &ty)?;
 
         Ok(IrAssignment { var: id, value })
     }
@@ -477,15 +492,12 @@ impl TypeCheck for FunctionCall {
 
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let (target_id, target_ty) = env.get_var_or_err(&self.target)?;
+        let target_ty = target_ty.clone();
         let arguments = self.arguments.type_check(env)?;
 
         let func_ty = match target_ty {
             IrType::Function(ty) => ty,
-            _ => {
-                return Err(TypeCheckError::NotAFunction {
-                    found: target_ty.clone(),
-                })
-            }
+            _ => return Err(TypeCheckError::NotAFunction { found: target_ty }),
         };
 
         Ok(IrFunctionCall {
@@ -539,7 +551,7 @@ impl TypeCheck for Expr {
                     data: IrExprData::Var(id),
                 })
             }
-            Expr::And(left, right) | Expr::Or(left, right) => {
+            Expr::And(left, right) => {
                 let left_ir = left.type_check(env)?;
                 let right_ir = right.type_check(env)?;
 
@@ -549,6 +561,18 @@ impl TypeCheck for Expr {
                 Ok(IrExpr {
                     ty: IrType::bool(),
                     data: IrExprData::And(Box::new(left_ir), Box::new(right_ir)),
+                })
+            }
+            Expr::Or(left, right) => {
+                let left_ir = left.type_check(env)?;
+                let right_ir = right.type_check(env)?;
+
+                assert_ty(&left_ir.ty, &IrType::bool())?;
+                assert_ty(&right_ir.ty, &IrType::bool())?;
+
+                Ok(IrExpr {
+                    ty: IrType::bool(),
+                    data: IrExprData::Or(Box::new(left_ir), Box::new(right_ir)),
                 })
             }
             Expr::Negation(inner) => {

@@ -1,12 +1,20 @@
 //! An Intermediate Representation (IR) of P4 code which includes type information
 
 use crate::ast::Direction;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 
 /****************************** IDs ******************************/
 
 /// Each variable will have a unique ID
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VariableId(pub usize);
+
+impl Display for VariableId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "var_{}", self.0)
+    }
+}
 
 /****************************** Types ******************************/
 
@@ -15,15 +23,12 @@ pub enum IrType {
     Base(IrBaseType),
     Function(IrFunctionType),
     Control(IrControlType),
+    Struct(IrStructType),
 }
 
 impl IrType {
     pub fn bool() -> Self {
         IrType::Base(IrBaseType::Bool)
-    }
-
-    pub fn is_bool(&self) -> bool {
-        matches!(self, IrType::Base(IrBaseType::Bool))
     }
 }
 
@@ -51,6 +56,12 @@ pub struct IrFunctionType {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrControlType {
     pub inputs: Vec<(IrType, Direction)>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrStructType {
+    // todo: fixme
+    pub name: String,
 }
 
 /****************************** Nodes ******************************/

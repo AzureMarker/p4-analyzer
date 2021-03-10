@@ -7,7 +7,7 @@ use crate::lexer::{LalrpopLexerIter, Token};
 use crate::optimizations::merge_simple_edges;
 use crate::to_gcl::ToGcl;
 use crate::to_wlp::{VariableMap, WlpMap};
-use crate::type_checker::perform_binding_analysis;
+use crate::type_checker::run_type_checking;
 use lalrpop_util::ParseError;
 use logos::Logos;
 use petgraph::dot::Dot;
@@ -63,13 +63,15 @@ fn main() {
     let time_to_parse = parse_start.elapsed();
 
     // Analyze P4
-    let (p4_program, _) = perform_binding_analysis(&p4_program).unwrap();
-    println!("After binding analysis: {:#?}", p4_program);
+    let type_checking_start = Instant::now();
+    let (p4_program_ir, metadata) = run_type_checking(&p4_program).unwrap();
+    let time_to_type_check = type_checking_start.elapsed();
+    println!("After type checking: {:#?}", p4_program_ir);
 
     // Convert to GCL
     let gcl_start = Instant::now();
     let mut graph = GclGraph::new();
-    let gcl_start_node = p4_program.to_gcl(&mut graph);
+    let gcl_start_node = p4_program_ir.to_gcl(&mut graph, &metadata);
     let time_to_gcl = gcl_start.elapsed();
 
     // Optimize GCL
@@ -98,12 +100,14 @@ fn main() {
 
     println!(
         "\nTime to parse P4: {}ms\n\
+         Time to type check: {}ms\n\
          Time to convert to GCL: {}ms\n\
          Time to optimize GCL: {}ms\n\
          Time to calculate WLP: {}ms\n\
          Time to calculate reachability: {}ms\n\
          Total time: {}ms",
         time_to_parse.as_millis(),
+        time_to_type_check.as_millis(),
         time_to_gcl.as_millis(),
         time_to_optimize_gcl.as_millis(),
         time_to_wlp.as_millis(),

@@ -1,5 +1,6 @@
 //! Guarded Command Language
 
+use crate::ir::VariableId;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::{StableDiGraph, StableGraph};
 use std::collections::HashMap;
@@ -10,7 +11,7 @@ use std::ops::{Deref, DerefMut};
 pub struct GclGraph {
     inner: StableDiGraph<GclNode, GclPredicate>,
     next_id_counter: usize,
-    functions: HashMap<String, GclNodeRange>,
+    functions: HashMap<VariableId, GclNodeRange>,
 }
 
 impl GclGraph {
@@ -31,12 +32,12 @@ impl GclGraph {
 
     /// Register the node range for a function. This is used later when calling
     /// it to set up edges.
-    pub fn register_function(&mut self, name: String, range: GclNodeRange) {
-        self.functions.insert(name, range);
+    pub fn register_function(&mut self, id: VariableId, range: GclNodeRange) {
+        self.functions.insert(id, range);
     }
 
-    pub fn get_function(&self, name: &str) -> Option<GclNodeRange> {
-        self.functions.get(name).copied()
+    pub fn get_function(&self, id: VariableId) -> Option<GclNodeRange> {
+        self.functions.get(&id).copied()
     }
 }
 
