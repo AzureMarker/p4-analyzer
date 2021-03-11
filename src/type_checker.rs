@@ -23,8 +23,8 @@ pub enum TypeCheckError {
     UnknownVar(String),
     /// There is more than one declaration of this variable in the same scope
     DuplicateDecl(String),
-    /// Found an unexpected type
-    UnexpectedType { expected: IrType, found: IrType },
+    /// Expected one type but got another
+    MismatchedTypes { expected: IrType, found: IrType },
     /// Expected a function, found other type
     NotAFunction { found: IrType },
     /// Expected an action, found other type
@@ -372,6 +372,7 @@ impl TypeCheck for KeyElement {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         // Note: the "name" of the key is not to be modified. It refers to a key
         // type (ex. exact or lpm) and does not reference or declare a variable.
+        // TODO: verify that the match kind has been declared previously
         Ok(IrKeyElement {
             match_kind: self.match_kind.clone(),
             expr: self.expr.type_check(env)?,
@@ -527,7 +528,7 @@ fn assert_ty(found: &IrType, expected: &IrType) -> Result<(), TypeCheckError> {
     if found == expected {
         Ok(())
     } else {
-        Err(TypeCheckError::UnexpectedType {
+        Err(TypeCheckError::MismatchedTypes {
             expected: expected.clone(),
             found: found.clone(),
         })
