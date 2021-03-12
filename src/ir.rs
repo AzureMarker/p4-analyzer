@@ -10,6 +10,10 @@ use std::fmt::{Display, Formatter};
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VariableId(pub usize);
 
+/// Each variable will have a unique ID
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TypeId(pub usize);
+
 impl Display for VariableId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "var_{}", self.0)
@@ -60,8 +64,9 @@ pub struct IrControlType {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrStructType {
-    // todo: fixme
-    pub name: String,
+    pub id: TypeId,
+    // TODO: do we need the field name string?
+    pub field_tys: Vec<(IrType, String)>,
 }
 
 /****************************** Nodes ******************************/
@@ -110,7 +115,6 @@ pub enum IrControlLocalDecl {
 
 #[derive(Debug)]
 pub enum IrDeclaration {
-    Struct(IrStructDecl),
     Control(IrControlDecl),
     Constant(IrVariableDecl),
     Instantiation(IrInstantiation),
@@ -185,10 +189,6 @@ pub enum IrStatementOrDecl {
     VariableDecl(IrVariableDecl),
     Instantiation(IrInstantiation),
 }
-
-// TODO
-#[derive(Debug)]
-pub struct IrStructDecl;
 
 #[derive(Debug)]
 pub struct IrTableDecl {

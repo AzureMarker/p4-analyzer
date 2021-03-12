@@ -36,7 +36,6 @@ impl ToGcl for IrProgram {
 
         for decl in &self.declarations {
             match decl {
-                IrDeclaration::Struct(_) => {} // todo
                 IrDeclaration::Constant(const_decl) => {
                     // Add onto the node chain
                     let range = const_decl.to_gcl(graph, metadata);
@@ -66,7 +65,11 @@ impl ToGcl for IrProgram {
             })
             .expect("Missing main declaration");
 
-        if !matches!(&main_decl.ty, IrType::Struct(IrStructType { name }) if name == "V1Switch") {
+        if !matches!(
+            &main_decl.ty,
+            IrType::Struct(IrStructType { id, .. })
+                if metadata.type_names.get(&id).map(String::as_str) == Some("V1Switch")
+        ) {
             panic!(
                 "Expected type of main to be 'V1Switch', got '{:?}'",
                 main_decl.ty

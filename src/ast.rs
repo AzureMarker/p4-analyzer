@@ -135,6 +135,7 @@ pub enum StatementOrDecl {
 #[derive(Clone, Debug)]
 pub struct StructDecl {
     pub name: String,
+    pub fields: Vec<(TypeRef, String)>,
 }
 
 #[derive(Debug)]

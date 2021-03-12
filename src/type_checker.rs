@@ -7,22 +7,27 @@ use std::collections::HashMap;
 use crate::ast::{
     ActionDecl, Argument, Assignment, BaseType, BlockStatement, ConstantDecl, ControlDecl,
     ControlLocalDecl, Declaration, Expr, FunctionCall, IfStatement, Instantiation, KeyElement,
-    Param, Program, Statement, StatementOrDecl, TableDecl, TableProperty, TypeRef, VariableDecl,
+    Param, Program, Statement, StatementOrDecl, StructDecl, TableDecl, TableProperty, TypeRef,
+    VariableDecl,
 };
 use crate::ir::{
     IrActionDecl, IrArgument, IrAssignment, IrBaseType, IrBlockStatement, IrControlDecl,
     IrControlLocalDecl, IrDeclaration, IrExpr, IrExprData, IrFunctionCall, IrFunctionType,
     IrIfStatement, IrInstantiation, IrKeyElement, IrParam, IrProgram, IrStatement,
-    IrStatementOrDecl, IrStructDecl, IrStructType, IrTableDecl, IrTableProperty, IrType,
-    IrVariableDecl, VariableId,
+    IrStatementOrDecl, IrStructType, IrTableDecl, IrTableProperty, IrType, IrVariableDecl, TypeId,
+    VariableId,
 };
 
 #[derive(Debug)]
 pub enum TypeCheckError {
     /// The declaration of this variable was not found
     UnknownVar(String),
+    /// The declaration of this type was not found
+    UnknownType(String),
     /// There is more than one declaration of this variable in the same scope
     DuplicateDecl(String),
+    /// There is already a type declared with the given name
+    DuplicateTypeDecl(String),
     /// Expected one type but got another
     MismatchedTypes { expected: IrType, found: IrType },
     /// Expected a function, found other type
@@ -45,12 +50,21 @@ pub fn run_type_checking(
 /// Holds some metadata about the program, such as the type of each variable.
 pub struct ProgramMetadata {
     pub var_types: HashMap<VariableId, IrType>,
+    pub type_names: HashMap<TypeId, String>,
 }
 
 impl From<EnvironmentStack> for ProgramMetadata {
     fn from(env: EnvironmentStack) -> Self {
         Self {
             var_types: env.var_tys,
+            type_names: env
+                .types
+                .into_iter()
+                .filter_map(|(name, ty)| match ty {
+                    IrType::Struct(IrStructType { id, .. }) => Some((id, name)),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 }
@@ -70,6 +84,7 @@ struct Environment {
 struct EnvironmentStack {
     stack: Vec<Environment>,
     var_tys: HashMap<VariableId, IrType>,
+    types: HashMap<String, IrType>,
     next_id: usize,
 }
 
@@ -100,7 +115,7 @@ impl EnvironmentStack {
     /// Insert a variable into the environment and return a unique ID for it.
     /// If the variable has already been declared in this same scope, an
     /// error is returned.
-    fn insert(&mut self, name: String, ty: IrType) -> Result<VariableId, TypeCheckError> {
+    fn insert_var(&mut self, name: String, ty: IrType) -> Result<VariableId, TypeCheckError> {
         if self.stack.is_empty() {
             self.stack.push(Environment::default());
         }
@@ -117,6 +132,30 @@ impl EnvironmentStack {
         env.variables.insert(name, id);
 
         Ok(id)
+    }
+
+    fn get_type(&self, name: &str) -> Option<&IrType> {
+        self.types.get(name)
+    }
+
+    fn get_type_or_err(&self, name: &str) -> Result<&IrType, TypeCheckError> {
+        self.get_type(name)
+            .ok_or_else(|| TypeCheckError::UnknownType(name.to_string()))
+    }
+
+    fn fresh_ty_id(&mut self) -> TypeId {
+        let id = TypeId(self.next_id);
+        self.next_id += 1;
+        id
+    }
+
+    /// Insert a user-defined type into the map
+    fn insert_type(&mut self, name: String, ty: IrType) -> Result<(), TypeCheckError> {
+        if self.types.insert(name.clone(), ty).is_some() {
+            return Err(TypeCheckError::DuplicateTypeDecl(name));
+        }
+
+        Ok(())
     }
 
     /// Push a scope (new environment) onto the stack
@@ -164,29 +203,44 @@ impl TypeCheck for Program {
 
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         Ok(IrProgram {
-            declarations: self.declarations.type_check(env)?,
+            declarations: self
+                .declarations
+                .type_check(env)?
+                .into_iter()
+                .flatten()
+                .collect(),
         })
     }
 }
 
 impl TypeCheck for Declaration {
-    type IrNode = IrDeclaration;
+    type IrNode = Option<IrDeclaration>;
 
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         match self {
-            Declaration::Struct(_struct_decl) => {
-                // TODO: handle structs
-                Ok(IrDeclaration::Struct(IrStructDecl))
+            Declaration::Struct(StructDecl { name, fields }) => {
+                let struct_ty = IrStructType {
+                    id: env.fresh_ty_id(),
+                    field_tys: fields
+                        .iter()
+                        .map(|(ty_ref, field_name)| {
+                            Ok((ty_ref.type_check(env)?, field_name.clone()))
+                        })
+                        .collect::<Result<_, _>>()?,
+                };
+
+                env.insert_type(name.clone(), IrType::Struct(struct_ty))?;
+                Ok(None)
             }
             Declaration::Control(control_decl) => {
-                Ok(IrDeclaration::Control(control_decl.type_check(env)?))
+                Ok(Some(IrDeclaration::Control(control_decl.type_check(env)?)))
             }
             Declaration::Constant(const_decl) => {
-                Ok(IrDeclaration::Constant(const_decl.type_check(env)?))
+                Ok(Some(IrDeclaration::Constant(const_decl.type_check(env)?)))
             }
-            Declaration::Instantiation(instantiation) => {
-                Ok(IrDeclaration::Instantiation(instantiation.type_check(env)?))
-            }
+            Declaration::Instantiation(instantiation) => Ok(Some(IrDeclaration::Instantiation(
+                instantiation.type_check(env)?,
+            ))),
         }
     }
 }
@@ -217,7 +271,7 @@ impl TypeCheck for Param {
 
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let ty = self.ty.type_check(env)?;
-        let id = env.insert(self.name.clone(), ty.clone())?;
+        let id = env.insert_var(self.name.clone(), ty.clone())?;
 
         Ok(IrParam {
             ty,
@@ -317,7 +371,7 @@ impl TypeCheck for ActionDecl {
                 .map(|param| (param.ty.clone(), param.direction))
                 .collect(),
         };
-        let id = env.insert(self.name.clone(), IrType::Function(ty.clone()))?;
+        let id = env.insert_var(self.name.clone(), IrType::Function(ty.clone()))?;
 
         Ok(IrActionDecl {
             ty,
@@ -333,7 +387,7 @@ impl TypeCheck for TableDecl {
 
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let properties = self.properties.type_check(env)?;
-        let id = env.insert(self.name.clone(), IrType::Base(IrBaseType::Table))?;
+        let id = env.insert_var(self.name.clone(), IrType::Base(IrBaseType::Table))?;
 
         Ok(IrTableDecl { id, properties })
     }
@@ -386,10 +440,7 @@ impl TypeCheck for TypeRef {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         match self {
             TypeRef::Base(base_ty) => Ok(IrType::Base(base_ty.type_check(env)?)),
-            TypeRef::Identifier(name) => {
-                // FIXME
-                Ok(IrType::Struct(IrStructType { name: name.clone() }))
-            }
+            TypeRef::Identifier(name) => env.get_type_or_err(name).map(IrType::clone),
         }
     }
 }
@@ -410,7 +461,7 @@ impl TypeCheck for ConstantDecl {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let ty = self.ty.type_check(env)?;
         let value = self.value.type_check(env)?;
-        let id = env.insert(self.name.clone(), ty.clone())?;
+        let id = env.insert_var(self.name.clone(), ty.clone())?;
 
         assert_ty(&value.ty, &ty)?;
 
@@ -429,7 +480,7 @@ impl TypeCheck for VariableDecl {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let ty = self.ty.type_check(env)?;
         let value = self.value.type_check(env)?;
-        let id = env.insert(self.name.clone(), ty.clone())?;
+        let id = env.insert_var(self.name.clone(), ty.clone())?;
 
         if let Some(value) = &value {
             assert_ty(&value.ty, &ty)?;
@@ -450,7 +501,7 @@ impl TypeCheck for Instantiation {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let ty = self.ty.type_check(env)?;
         let args = self.args.type_check(env)?;
-        let id = env.insert(self.name.clone(), ty.clone())?;
+        let id = env.insert_var(self.name.clone(), ty.clone())?;
 
         Ok(IrInstantiation { ty, id, args })
     }

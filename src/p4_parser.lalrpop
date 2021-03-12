@@ -15,9 +15,9 @@ Declaration: Declaration = {
 
 // TODO: support the full struct syntax
 // This is currently only used to introduce type names
-StructDecl: StructDecl = "struct" <name:Identifier> ";" => {
+StructDecl: StructDecl = "struct" <name:Identifier> "{" <fields:(<TypeRef> <Identifier> ";")*> "}" => {
     lexer_state.borrow_mut().insert(name.clone());
-    StructDecl { name }
+    StructDecl { name, fields }
 };
 
 ControlDecl: ControlDecl =
