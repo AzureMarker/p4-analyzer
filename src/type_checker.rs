@@ -14,8 +14,7 @@ use crate::ir::{
     IrActionDecl, IrArgument, IrAssignment, IrBaseType, IrBlockStatement, IrControlDecl,
     IrControlLocalDecl, IrDeclaration, IrExpr, IrExprData, IrFunctionCall, IrFunctionType,
     IrIfStatement, IrInstantiation, IrKeyElement, IrParam, IrProgram, IrStatement,
-    IrStatementOrDecl, IrStructType, IrTableDecl, IrTableProperty, IrType, IrVariableDecl, TypeId,
-    VariableId,
+    IrStatementOrDecl, IrTableDecl, IrTableProperty, IrType, IrVariableDecl, TypeId, VariableId,
 };
 
 #[derive(Debug)]
@@ -34,6 +33,8 @@ pub enum TypeCheckError {
     NotAFunction { found: IrType },
     /// Expected an action, found other type
     NotAnAction { found: IrType },
+    /// Expected a base type, found other type
+    NotABaseType { found: IrType },
 }
 
 /// Run binding analysis on the program, creating a new program with unique
@@ -50,21 +51,22 @@ pub fn run_type_checking(
 /// Holds some metadata about the program, such as the type of each variable.
 pub struct ProgramMetadata {
     pub var_types: HashMap<VariableId, IrType>,
-    pub type_names: HashMap<TypeId, String>,
+    // pub type_names: HashMap<TypeId, String>,
 }
 
 impl From<EnvironmentStack> for ProgramMetadata {
     fn from(env: EnvironmentStack) -> Self {
         Self {
             var_types: env.var_tys,
-            type_names: env
-                .types
-                .into_iter()
-                .filter_map(|(name, ty)| match ty {
-                    IrType::Struct(IrStructType { id, .. }) => Some((id, name)),
-                    _ => None,
-                })
-                .collect(),
+            // type_names: env
+            //     .types
+            //     .into_iter()
+            //     .filter_map(|(name, ty)| match ty {
+            //         IrType::Base(IrBaseType::TyVar(id))
+            //         | IrType::Base(IrBaseType::Enum { id, .. }) => Some((id, name)),
+            //         _ => None,
+            //     })
+            //     .collect(),
         }
     }
 }
@@ -169,6 +171,16 @@ impl EnvironmentStack {
     }
 }
 
+impl IrType {
+    /// Expect to find a base type. Return an error if this is not a base type.
+    fn unwrap_base(self) -> Result<IrBaseType, TypeCheckError> {
+        match self {
+            IrType::Base(ty) => Ok(ty),
+            ty => Err(TypeCheckError::NotABaseType { found: ty }),
+        }
+    }
+}
+
 /// Trait for performing type checking and binding analysis on an AST node while
 /// transforming it into typed IR.
 trait TypeCheck: Sized {
@@ -219,17 +231,17 @@ impl TypeCheck for Declaration {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         match self {
             Declaration::Struct(StructDecl { name, fields }) => {
-                let struct_ty = IrStructType {
-                    id: env.fresh_ty_id(),
-                    field_tys: fields
+                let struct_ty = IrType::Base(IrBaseType::Record {
+                    fields: fields
                         .iter()
                         .map(|(ty_ref, field_name)| {
-                            Ok((ty_ref.type_check(env)?, field_name.clone()))
+                            let ty = ty_ref.type_check(env)?.unwrap_base()?;
+                            Ok((ty, field_name.clone()))
                         })
                         .collect::<Result<_, _>>()?,
-                };
+                });
 
-                env.insert_type(name.clone(), IrType::Struct(struct_ty))?;
+                env.insert_type(name.clone(), struct_ty)?;
                 Ok(None)
             }
             Declaration::Control(control_decl) => {
@@ -274,7 +286,7 @@ impl TypeCheck for Param {
         let id = env.insert_var(self.name.clone(), ty.clone())?;
 
         Ok(IrParam {
-            ty,
+            ty: ty.unwrap_base()?,
             id,
             direction: self.direction,
         })
@@ -365,20 +377,12 @@ impl TypeCheck for ActionDecl {
         env.pop_scope();
 
         let ty = IrFunctionType {
-            result: Box::new(IrType::Base(IrBaseType::Void)),
-            inputs: params
-                .iter()
-                .map(|param| (param.ty.clone(), param.direction))
-                .collect(),
+            result: Box::new(IrBaseType::Record { fields: Vec::new() }),
+            inputs: params,
         };
         let id = env.insert_var(self.name.clone(), IrType::Function(ty.clone()))?;
 
-        Ok(IrActionDecl {
-            ty,
-            id,
-            params,
-            body,
-        })
+        Ok(IrActionDecl { ty, id, body })
     }
 }
 
@@ -387,7 +391,7 @@ impl TypeCheck for TableDecl {
 
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let properties = self.properties.type_check(env)?;
-        let id = env.insert_var(self.name.clone(), IrType::Base(IrBaseType::Table))?;
+        let id = env.insert_var(self.name.clone(), IrType::Table)?;
 
         Ok(IrTableDecl { id, properties })
     }
@@ -406,9 +410,7 @@ impl TypeCheck for TableProperty {
                         let (id, ty) = env.get_var_or_err(action)?;
 
                         match ty {
-                            IrType::Function(IrFunctionType { result, .. })
-                                if matches!(result.as_ref(), IrType::Base(IrBaseType::Void)) =>
-                            {
+                            IrType::Function(IrFunctionType { result, .. }) if result.is_void() => {
                                 Ok(id)
                             }
                             _ => Err(TypeCheckError::NotAnAction { found: ty.clone() }),
@@ -503,6 +505,8 @@ impl TypeCheck for Instantiation {
         let args = self.args.type_check(env)?;
         let id = env.insert_var(self.name.clone(), ty.clone())?;
 
+        // TODO: ensure type is a constructor and arg types match up
+
         Ok(IrInstantiation { ty, id, args })
     }
 }
@@ -553,7 +557,7 @@ impl TypeCheck for FunctionCall {
         };
 
         Ok(IrFunctionCall {
-            result_ty: func_ty.result.as_ref().clone(),
+            result_ty: *func_ty.result,
             target: target_id,
             arguments,
         })
@@ -641,7 +645,7 @@ impl TypeCheck for Expr {
                 let func_call_ir = func_call.type_check(env)?;
 
                 Ok(IrExpr {
-                    ty: func_call_ir.result_ty.clone(),
+                    ty: IrType::Base(func_call_ir.result_ty.clone()),
                     data: IrExprData::FunctionCall(func_call_ir),
                 })
             }

@@ -10,7 +10,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VariableId(pub usize);
 
-/// Each variable will have a unique ID
+/// Type variables (i.e. generics) have unique IDs
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeId(pub usize);
 
@@ -25,9 +25,9 @@ impl Display for VariableId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrType {
     Base(IrBaseType),
+    Table,
     Function(IrFunctionType),
-    Control(IrControlType),
-    Struct(IrStructType),
+    Constructor(IrConstructorType),
 }
 
 impl IrType {
@@ -38,36 +38,47 @@ impl IrType {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrBaseType {
-    Void,
-    // TODO: table is not listed in the spec's types, so how does p4c handle it?
-    Table,
-    Error,
-    String,
-    MatchKind,
+    // TODO: extend these types, e.g. with varbit<> and int<>
     Bool,
     Int,
-    BitString { width: usize },
-    IntString { width: usize },
-    VarBitString { width: usize },
+    Bit { width: usize },
+    Error,
+    MatchKind,
+    Enum { name: String, fields: Vec<String> },
+    Record { fields: Vec<(IrBaseType, String)> },
+    Header { fields: Vec<(IrBaseType, String)> },
+    TyVar(TypeId),
+}
+
+impl IrBaseType {
+    pub fn is_void(&self) -> bool {
+        matches!(self, IrBaseType::Record { fields } if fields.is_empty())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrFunctionType {
+    pub result: Box<IrBaseType>,
+    pub inputs: Vec<IrParam>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrConstructorType {
     pub result: Box<IrType>,
-    pub inputs: Vec<(IrType, Direction)>,
+    pub inputs: Vec<(IrType, String)>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IrControlType {
-    pub inputs: Vec<(IrType, Direction)>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IrStructType {
-    pub id: TypeId,
-    // TODO: do we need the field name string?
-    pub field_tys: Vec<(IrType, String)>,
-}
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub struct IrControlType {
+//     pub inputs: Vec<(IrType, Direction)>,
+// }
+//
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub struct IrStructType {
+//     pub id: TypeId,
+//     // TODO: do we need the field name string?
+//     pub field_tys: Vec<(IrType, String)>,
+// }
 
 /****************************** Nodes ******************************/
 // Note: node types are sorted alphabetically
@@ -76,7 +87,6 @@ pub struct IrStructType {
 pub struct IrActionDecl {
     pub ty: IrFunctionType,
     pub id: VariableId,
-    pub params: Vec<IrParam>,
     pub body: IrBlockStatement,
 }
 
@@ -138,7 +148,7 @@ pub enum IrExprData {
 
 #[derive(Clone, Debug)]
 pub struct IrFunctionCall {
-    pub result_ty: IrType,
+    pub result_ty: IrBaseType,
     pub target: VariableId,
     pub arguments: Vec<IrArgument>,
 }
@@ -163,10 +173,10 @@ pub struct IrKeyElement {
     pub match_kind: String,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrParam {
     pub direction: Direction,
-    pub ty: IrType,
+    pub ty: IrBaseType,
     pub id: VariableId,
 }
 

@@ -4,7 +4,7 @@ use crate::gcl::{GclAssignment, GclCommand, GclGraph, GclNode, GclNodeRange, Gcl
 use crate::ir::{
     IrActionDecl, IrAssignment, IrBlockStatement, IrControlDecl, IrControlLocalDecl, IrDeclaration,
     IrExpr, IrExprData, IrFunctionCall, IrIfStatement, IrInstantiation, IrProgram, IrStatement,
-    IrStatementOrDecl, IrStructType, IrType, IrVariableDecl,
+    IrStatementOrDecl, IrVariableDecl,
 };
 use crate::type_checker::ProgramMetadata;
 use either::Either;
@@ -54,27 +54,27 @@ impl ToGcl for IrProgram {
 
         graph.node_weight_mut(start_idx).unwrap().commands = commands;
 
-        let main_decl = self
-            .declarations
-            .last()
-            .and_then(|decl| match decl {
-                IrDeclaration::Instantiation(instantiation) /*if instantiation.name == "main"*/ => {
-                    Some(instantiation)
-                }
-                _ => None,
-            })
-            .expect("Missing main declaration");
+        // let main_decl = self
+        //     .declarations
+        //     .last()
+        //     .and_then(|decl| match decl {
+        //         IrDeclaration::Instantiation(instantiation) /*if instantiation.name == "main"*/ => {
+        //             Some(instantiation)
+        //         }
+        //         _ => None,
+        //     })
+        //     .expect("Missing main declaration");
 
-        if !matches!(
-            &main_decl.ty,
-            IrType::Struct(IrStructType { id, .. })
-                if metadata.type_names.get(&id).map(String::as_str) == Some("V1Switch")
-        ) {
-            panic!(
-                "Expected type of main to be 'V1Switch', got '{:?}'",
-                main_decl.ty
-            );
-        }
+        // if !matches!(
+        //     &main_decl.ty,
+        //     IrType::Struct(IrStructType { id, .. })
+        //         if metadata.type_names.get(&id).map(String::as_str) == Some("V1Switch")
+        // ) {
+        //     panic!(
+        //         "Expected type of main to be 'V1Switch', got '{:?}'",
+        //         main_decl.ty
+        //     );
+        // }
 
         // FIXME: This is a hard-coded way of connecting start to the control
         //        block. Instead, we should parse the main decl and use that info.
