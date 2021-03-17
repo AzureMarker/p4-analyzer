@@ -14,7 +14,8 @@ use crate::ir::{
     IrActionDecl, IrArgument, IrAssignment, IrBaseType, IrBlockStatement, IrControlDecl,
     IrControlLocalDecl, IrDeclaration, IrExpr, IrExprData, IrFunctionCall, IrFunctionType,
     IrIfStatement, IrInstantiation, IrKeyElement, IrParam, IrProgram, IrStatement,
-    IrStatementOrDecl, IrTableDecl, IrTableProperty, IrType, IrVariableDecl, TypeId, VariableId,
+    IrStatementOrDecl, IrTableDecl, IrTableProperty, IrType, IrVariableDecl, TypeId, TypeVarId,
+    VariableId,
 };
 
 #[derive(Debug)]
@@ -231,7 +232,8 @@ impl TypeCheck for Declaration {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         match self {
             Declaration::Struct(StructDecl { name, fields }) => {
-                let struct_ty = IrType::Base(IrBaseType::Record {
+                let struct_ty = IrType::Base(IrBaseType::Struct {
+                    id: env.fresh_ty_id(),
                     fields: fields
                         .iter()
                         .map(|(ty_ref, field_name)| {
@@ -377,7 +379,7 @@ impl TypeCheck for ActionDecl {
         env.pop_scope();
 
         let ty = IrFunctionType {
-            result: Box::new(IrBaseType::Record { fields: Vec::new() }),
+            result: Box::new(IrBaseType::Void),
             inputs: params,
         };
         let id = env.insert_var(self.name.clone(), IrType::Function(ty.clone()))?;

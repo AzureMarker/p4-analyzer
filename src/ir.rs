@@ -10,9 +10,13 @@ use std::fmt::{Display, Formatter};
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VariableId(pub usize);
 
-/// Type variables (i.e. generics) have unique IDs
+/// Each distinct user-defined type (ex. structs) will have a unique ID
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeId(pub usize);
+
+/// Type variables (i.e. generics) have unique IDs
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TypeVarId(pub usize);
 
 impl Display for VariableId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -39,20 +43,31 @@ impl IrType {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrBaseType {
     // TODO: extend these types, e.g. with varbit<> and int<>
+    Void,
     Bool,
     Int,
-    Bit { width: usize },
+    Bit {
+        width: usize,
+    },
     Error,
     MatchKind,
-    Enum { name: String, fields: Vec<String> },
-    Record { fields: Vec<(IrBaseType, String)> },
-    Header { fields: Vec<(IrBaseType, String)> },
-    TyVar(TypeId),
+    Enum {
+        name: String,
+        fields: Vec<String>,
+    },
+    Struct {
+        id: TypeId,
+        fields: Vec<(IrBaseType, String)>,
+    },
+    Header {
+        fields: Vec<(IrBaseType, String)>,
+    },
+    TyVar(TypeVarId),
 }
 
 impl IrBaseType {
     pub fn is_void(&self) -> bool {
-        matches!(self, IrBaseType::Record { fields } if fields.is_empty())
+        matches!(self, IrBaseType::Void)
     }
 }
 
