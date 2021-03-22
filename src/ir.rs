@@ -10,10 +10,6 @@ use std::fmt::{Display, Formatter};
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VariableId(pub usize);
 
-/// Each distinct user-defined type (ex. structs) will have a unique ID
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TypeId(pub usize);
-
 /// Type variables (i.e. generics) have unique IDs
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVarId(pub usize);
@@ -46,22 +42,12 @@ pub enum IrBaseType {
     Void,
     Bool,
     Int,
-    Bit {
-        width: usize,
-    },
+    Bit { width: usize },
     Error,
     MatchKind,
-    Enum {
-        name: String,
-        fields: Vec<String>,
-    },
-    Struct {
-        id: TypeId,
-        fields: Vec<(IrBaseType, String)>,
-    },
-    Header {
-        fields: Vec<(IrBaseType, String)>,
-    },
+    Enum { name: String, fields: Vec<String> },
+    Struct { fields: Vec<(IrBaseType, String)> },
+    Header { fields: Vec<(IrBaseType, String)> },
     TyVar(TypeVarId),
 }
 

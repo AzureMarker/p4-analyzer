@@ -14,8 +14,7 @@ use crate::ir::{
     IrActionDecl, IrArgument, IrAssignment, IrBaseType, IrBlockStatement, IrControlDecl,
     IrControlLocalDecl, IrDeclaration, IrExpr, IrExprData, IrFunctionCall, IrFunctionType,
     IrIfStatement, IrInstantiation, IrKeyElement, IrParam, IrProgram, IrStatement,
-    IrStatementOrDecl, IrTableDecl, IrTableProperty, IrType, IrVariableDecl, TypeId, TypeVarId,
-    VariableId,
+    IrStatementOrDecl, IrTableDecl, IrTableProperty, IrType, IrVariableDecl, VariableId,
 };
 
 #[derive(Debug)]
@@ -146,12 +145,6 @@ impl EnvironmentStack {
             .ok_or_else(|| TypeCheckError::UnknownType(name.to_string()))
     }
 
-    fn fresh_ty_id(&mut self) -> TypeId {
-        let id = TypeId(self.next_id);
-        self.next_id += 1;
-        id
-    }
-
     /// Insert a user-defined type into the map
     fn insert_type(&mut self, name: String, ty: IrType) -> Result<(), TypeCheckError> {
         if self.types.insert(name.clone(), ty).is_some() {
@@ -233,7 +226,6 @@ impl TypeCheck for Declaration {
         match self {
             Declaration::Struct(StructDecl { name, fields }) => {
                 let struct_ty = IrType::Base(IrBaseType::Struct {
-                    id: env.fresh_ty_id(),
                     fields: fields
                         .iter()
                         .map(|(ty_ref, field_name)| {
