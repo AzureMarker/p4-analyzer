@@ -371,7 +371,7 @@ impl TypeCheck for ActionDecl {
         env.pop_scope();
 
         let ty = IrFunctionType {
-            result: Box::new(IrBaseType::Void),
+            result: Box::new(IrBaseType::void()),
             inputs: params,
         };
         let id = env.insert_var(self.name.clone(), IrType::Function(ty.clone()))?;

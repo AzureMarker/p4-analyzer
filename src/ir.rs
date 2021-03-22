@@ -39,7 +39,6 @@ impl IrType {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrBaseType {
     // TODO: extend these types, e.g. with varbit<> and int<>
-    Void,
     Bool,
     Int,
     Bit { width: usize },
@@ -52,8 +51,12 @@ pub enum IrBaseType {
 }
 
 impl IrBaseType {
+    pub fn void() -> Self {
+        IrBaseType::Struct { fields: Vec::new() }
+    }
+
     pub fn is_void(&self) -> bool {
-        matches!(self, IrBaseType::Void)
+        matches!(self, IrBaseType::Struct { fields } if fields.is_empty())
     }
 }
 
