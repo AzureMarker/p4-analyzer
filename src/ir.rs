@@ -103,7 +103,7 @@ pub enum IrArgument {
 
 #[derive(Clone, Debug)]
 pub struct IrAssignment {
-    pub var: VariableId,
+    pub lvalue: IrLValue,
     pub value: IrExpr,
 }
 
@@ -148,6 +148,7 @@ pub enum IrExprData {
     Or(Box<IrExpr>, Box<IrExpr>),
     Negation(Box<IrExpr>),
     FunctionCall(IrFunctionCall),
+    FieldAccess(Box<IrExpr>, String),
 }
 
 #[derive(Clone, Debug)]
@@ -175,6 +176,18 @@ pub struct IrInstantiation {
 pub struct IrKeyElement {
     pub expr: IrExpr,
     pub match_kind: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct IrLValue {
+    pub ty: IrType,
+    pub data: IrLValueData,
+}
+
+#[derive(Clone, Debug)]
+pub enum IrLValueData {
+    Var(VariableId),
+    Field(Box<IrLValue>, String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

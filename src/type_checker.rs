@@ -7,14 +7,15 @@ use std::collections::HashMap;
 use crate::ast::{
     ActionDecl, Argument, Assignment, BaseType, BlockStatement, ConstantDecl, ControlDecl,
     ControlLocalDecl, Declaration, Expr, FunctionCall, IfStatement, Instantiation, KeyElement,
-    Param, Program, Statement, StatementOrDecl, StructDecl, TableDecl, TableProperty, TypeRef,
-    VariableDecl,
+    LValue, Param, Program, Statement, StatementOrDecl, StructDecl, TableDecl, TableProperty,
+    TypeRef, VariableDecl,
 };
 use crate::ir::{
     IrActionDecl, IrArgument, IrAssignment, IrBaseType, IrBlockStatement, IrControlDecl,
     IrControlLocalDecl, IrDeclaration, IrExpr, IrExprData, IrFunctionCall, IrFunctionType,
-    IrIfStatement, IrInstantiation, IrKeyElement, IrParam, IrProgram, IrStatement,
-    IrStatementOrDecl, IrTableDecl, IrTableProperty, IrType, IrVariableDecl, VariableId,
+    IrIfStatement, IrInstantiation, IrKeyElement, IrLValue, IrLValueData, IrParam, IrProgram,
+    IrStatement, IrStatementOrDecl, IrTableDecl, IrTableProperty, IrType, IrVariableDecl,
+    VariableId,
 };
 
 #[derive(Debug)]
@@ -23,18 +24,19 @@ pub enum TypeCheckError {
     UnknownVar(String),
     /// The declaration of this type was not found
     UnknownType(String),
+    /// The given field was not found on the struct/header
+    UnknownField(String),
     /// There is more than one declaration of this variable in the same scope
     DuplicateDecl(String),
     /// There is already a type declared with the given name
     DuplicateTypeDecl(String),
     /// Expected one type but got another
     MismatchedTypes { expected: IrType, found: IrType },
-    /// Expected a function, found other type
-    NotAFunction { found: IrType },
-    /// Expected an action, found other type
-    NotAnAction { found: IrType },
-    /// Expected a base type, found other type
-    NotABaseType { found: IrType },
+    /// Expected a {expected}, found other type
+    MismatchedTypeKind {
+        expected: &'static str,
+        found: IrType,
+    },
 }
 
 /// Run binding analysis on the program, creating a new program with unique
@@ -170,8 +172,30 @@ impl IrType {
     fn unwrap_base(self) -> Result<IrBaseType, TypeCheckError> {
         match self {
             IrType::Base(ty) => Ok(ty),
-            ty => Err(TypeCheckError::NotABaseType { found: ty }),
+            ty => Err(TypeCheckError::MismatchedTypeKind {
+                expected: "base type",
+                found: ty,
+            }),
         }
+    }
+
+    /// Assuming this is a struct or header type, get the type of a field.
+    fn get_field_ty(&self, field: &str) -> Result<&IrBaseType, TypeCheckError> {
+        let fields = match self {
+            IrType::Base(IrBaseType::Struct { fields })
+            | IrType::Base(IrBaseType::Header { fields }) => fields,
+            _ => {
+                return Err(TypeCheckError::MismatchedTypeKind {
+                    expected: "struct or header",
+                    found: self.clone(),
+                })
+            }
+        };
+
+        fields
+            .iter()
+            .find_map(|(ty, name)| if name == field { Some(ty) } else { None })
+            .ok_or_else(|| TypeCheckError::UnknownField(field.to_string()))
     }
 }
 
@@ -407,7 +431,10 @@ impl TypeCheck for TableProperty {
                             IrType::Function(IrFunctionType { result, .. }) if result.is_void() => {
                                 Ok(id)
                             }
-                            _ => Err(TypeCheckError::NotAnAction { found: ty.clone() }),
+                            _ => Err(TypeCheckError::MismatchedTypeKind {
+                                expected: "action",
+                                found: ty.clone(),
+                            }),
                         }
                     })
                     .collect::<Result<_, _>>()?,
@@ -527,13 +554,37 @@ impl TypeCheck for Assignment {
     type IrNode = IrAssignment;
 
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
-        let (id, ty) = env.get_var_or_err(&self.name)?;
-        let ty = ty.clone();
+        let lvalue = self.lvalue.type_check(env)?;
         let value = self.value.type_check(env)?;
 
-        assert_ty(&value.ty, &ty)?;
+        assert_ty(&value.ty, &lvalue.ty)?;
 
-        Ok(IrAssignment { var: id, value })
+        Ok(IrAssignment { lvalue, value })
+    }
+}
+
+impl TypeCheck for LValue {
+    type IrNode = IrLValue;
+
+    fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
+        match self {
+            LValue::Var(var) => {
+                let (id, ty) = env.get_var_or_err(var)?;
+                Ok(IrLValue {
+                    ty: ty.clone(),
+                    data: IrLValueData::Var(id),
+                })
+            }
+            LValue::Field(target, field) => {
+                let target_ir = target.type_check(env)?;
+                let field_ty = target_ir.ty.get_field_ty(field)?;
+
+                Ok(IrLValue {
+                    ty: IrType::Base(field_ty.clone()),
+                    data: IrLValueData::Field(Box::new(target_ir), field.to_string()),
+                })
+            }
+        }
     }
 }
 
@@ -547,7 +598,12 @@ impl TypeCheck for FunctionCall {
 
         let func_ty = match target_ty {
             IrType::Function(ty) => ty,
-            _ => return Err(TypeCheckError::NotAFunction { found: target_ty }),
+            _ => {
+                return Err(TypeCheckError::MismatchedTypeKind {
+                    expected: "function",
+                    found: target_ty,
+                })
+            }
         };
 
         Ok(IrFunctionCall {
@@ -641,6 +697,15 @@ impl TypeCheck for Expr {
                 Ok(IrExpr {
                     ty: IrType::Base(func_call_ir.result_ty.clone()),
                     data: IrExprData::FunctionCall(func_call_ir),
+                })
+            }
+            Expr::FieldAccess(target, field) => {
+                let target_ir = target.type_check(env)?;
+                let field_ty = target_ir.ty.get_field_ty(field)?;
+
+                Ok(IrExpr {
+                    ty: IrType::Base(field_ty.clone()),
+                    data: IrExprData::FieldAccess(Box::new(target_ir), field.clone()),
                 })
             }
         }

@@ -16,7 +16,7 @@ pub enum Argument {
 
 #[derive(Clone, Debug)]
 pub struct Assignment {
-    pub name: String,
+    pub lvalue: LValue,
     pub value: Expr,
 }
 
@@ -76,6 +76,7 @@ pub enum Expr {
     Or(Box<Expr>, Box<Expr>),
     Negation(Box<Expr>),
     FunctionCall(FunctionCall),
+    FieldAccess(Box<Expr>, String),
 }
 
 #[derive(Clone, Debug)]
@@ -102,6 +103,12 @@ pub struct Instantiation {
 pub struct KeyElement {
     pub expr: Expr,
     pub match_kind: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum LValue {
+    Var(String),
+    Field(Box<LValue>, String),
 }
 
 #[derive(Debug)]

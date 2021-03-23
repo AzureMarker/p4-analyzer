@@ -84,8 +84,15 @@ VariableDecl: VariableDecl = {
 ConstantDecl: ConstantDecl = "const" <ty:TypeRef> <name:Identifier> "=" <value:Expr> ";"
     => ConstantDecl { ty, name, value };
 
-Assignment: Assignment = <name:Identifier> "=" <value:Expr> ";"
-    => Assignment { name, value };
+Assignment: Assignment = <lvalue:LValue> "=" <value:Expr> ";"
+    => Assignment { lvalue, value };
+
+LValue: LValue = {
+    Identifier => LValue::Var(<>),
+    <target:LValue> "." <member:Member> => LValue::Field(Box::new(target), member),
+};
+
+Member: String = { Identifier, TypeIdentifier };
 
 FunctionCall: FunctionCall = <target:Identifier> "(" <arguments:Comma<Argument>> ")" ";"
     => FunctionCall { target, arguments };
@@ -97,17 +104,21 @@ IfStatement: IfStatement = {
 };
 
 Expr: Expr = {
-    #[precedence(level = "1")]
+    #[precedence(level = "0")]
     Bool => Expr::Bool(<>),
-    #[precedence(level = "1")]
+    #[precedence(level = "0")]
     Identifier => Expr::Var(<>),
-    #[precedence(level = "1")]
+    #[precedence(level = "0")]
     "(" <Expr> ")",
-    #[precedence(level = "1")]
-    "!" <Expr> => Expr::Negation(Box::new(<>)),
-    #[precedence(level = "1")]
+    #[precedence(level = "0")]
     <target:Identifier> "(" <arguments:Comma<Argument>> ")"
         => Expr::FunctionCall(FunctionCall { target, arguments }),
+    #[precedence(level = "0")]
+    <target:Expr> "." <field:Identifier>
+        => Expr::FieldAccess(Box::new(target), field),
+
+    #[precedence(level = "1")]
+    "!" <Expr> => Expr::Negation(Box::new(<>)),
 
     #[precedence(level = "2")]
     #[assoc(side = "left")]
@@ -163,6 +174,7 @@ extern {
         ";" => Token::Semicolon,
         ":" => Token::Colon,
         "," => Token::Comma,
+        "." => Token::Period,
         "!" => Token::Exclamation,
         "(" => Token::LParen,
         ")" => Token::RParen,

@@ -24,6 +24,8 @@ pub enum Token<'input> {
     Colon,
     #[token(",")]
     Comma,
+    #[token(".")]
+    Period,
     #[token("!")]
     Exclamation,
     #[token("(")]
