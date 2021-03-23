@@ -2,7 +2,7 @@
 //! * Binding analysis (connect variables to declarations and give each a unique name)
 //! * Type checking (check the type usage and attach type information to AST nodes)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     ActionDecl, Argument, Assignment, BaseType, BlockStatement, ConstantDecl, ControlDecl,
@@ -37,6 +37,8 @@ pub enum TypeCheckError {
         expected: &'static str,
         found: IrType,
     },
+    /// Tried to assign to a const value
+    ModifyingConstValue,
 }
 
 /// Run binding analysis on the program, creating a new program with unique
@@ -89,6 +91,7 @@ struct EnvironmentStack {
     stack: Vec<Environment>,
     var_tys: HashMap<VariableId, IrType>,
     types: HashMap<String, IrType>,
+    const_set: HashSet<VariableId>,
     next_id: usize,
 }
 
@@ -154,6 +157,16 @@ impl EnvironmentStack {
         }
 
         Ok(())
+    }
+
+    /// Mark a variable as const
+    fn mark_const(&mut self, id: VariableId) {
+        self.const_set.insert(id);
+    }
+
+    /// Check if a variable was marked as const
+    fn is_const(&self, id: VariableId) -> bool {
+        self.const_set.contains(&id)
     }
 
     /// Push a scope (new environment) onto the stack
@@ -487,6 +500,7 @@ impl TypeCheck for ConstantDecl {
         let id = env.insert_var(self.name.clone(), ty.clone())?;
 
         assert_ty(&value.ty, &ty)?;
+        env.mark_const(id);
 
         Ok(IrVariableDecl {
             ty,
@@ -556,6 +570,10 @@ impl TypeCheck for Assignment {
     fn type_check(&self, env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         let lvalue = self.lvalue.type_check(env)?;
         let value = self.value.type_check(env)?;
+
+        if env.is_const(lvalue.var_id()) {
+            return Err(TypeCheckError::ModifyingConstValue);
+        }
 
         assert_ty(&value.ty, &lvalue.ty)?;
 

@@ -184,6 +184,15 @@ pub struct IrLValue {
     pub data: IrLValueData,
 }
 
+impl IrLValue {
+    pub fn var_id(&self) -> VariableId {
+        match &self.data {
+            IrLValueData::Var(id) => *id,
+            IrLValueData::Field(target, _) => target.var_id(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum IrLValueData {
     Var(VariableId),
