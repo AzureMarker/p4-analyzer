@@ -2,7 +2,8 @@
 extern crate lalrpop_util;
 
 use crate::ast::Program;
-use crate::gcl::{GclGraph, GclNode, GclPredicate};
+use crate::gcl::{GclExpr, GclGraph, GclNode};
+use crate::ir::IrType;
 use crate::lexer::{LalrpopLexerIter, Token};
 use crate::optimizations::merge_simple_edges;
 use crate::to_gcl::ToGcl;
@@ -153,7 +154,7 @@ fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
 
 fn calculate_reachable(
     graph: &GclGraph,
-    node_wlp: &HashMap<NodeIndex, GclPredicate>,
+    node_wlp: &HashMap<NodeIndex, GclExpr>,
     only_bugs: bool,
 ) -> HashMap<NodeIndex, bool> {
     // TODO: idea: go in reverse topological sort, propagate reachability

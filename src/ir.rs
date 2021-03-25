@@ -22,7 +22,7 @@ impl Display for VariableId {
 
 /****************************** Types ******************************/
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum IrType {
     Base(IrBaseType),
     Table,
@@ -34,14 +34,19 @@ impl IrType {
     pub fn bool() -> Self {
         IrType::Base(IrBaseType::Bool)
     }
+
+    pub fn string() -> Self {
+        IrType::Base(IrBaseType::String)
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum IrBaseType {
     // TODO: extend these types, e.g. with varbit<> and int<>
     Bool,
     Int,
     Bit { width: usize },
+    String,
     Error,
     MatchKind,
     Enum { name: String, fields: Vec<String> },
@@ -60,29 +65,17 @@ impl IrBaseType {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IrFunctionType {
     pub result: Box<IrBaseType>,
     pub inputs: Vec<IrParam>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IrConstructorType {
     pub result: Box<IrType>,
     pub inputs: Vec<(IrType, String)>,
 }
-
-// #[derive(Clone, Debug, Eq, PartialEq)]
-// pub struct IrControlType {
-//     pub inputs: Vec<(IrType, Direction)>,
-// }
-//
-// #[derive(Clone, Debug, Eq, PartialEq)]
-// pub struct IrStructType {
-//     pub id: TypeId,
-//     // TODO: do we need the field name string?
-//     pub field_tys: Vec<(IrType, String)>,
-// }
 
 /****************************** Nodes ******************************/
 // Note: node types are sorted alphabetically
@@ -199,7 +192,7 @@ pub enum IrLValueData {
     Field(Box<IrLValue>, String),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IrParam {
     pub direction: Direction,
     pub ty: IrBaseType,

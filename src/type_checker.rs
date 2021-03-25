@@ -53,6 +53,7 @@ pub fn run_type_checking(
 }
 
 /// Holds some metadata about the program, such as the type of each variable.
+// TODO: do we need this?
 pub struct ProgramMetadata {
     pub var_types: HashMap<VariableId, IrType>,
     // pub type_names: HashMap<TypeId, String>,

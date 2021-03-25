@@ -1,4 +1,4 @@
-use crate::gcl::{GclGraph, GclPredicate};
+use crate::gcl::{GclExpr, GclExprData, GclGraph};
 use petgraph::algo::toposort;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
@@ -25,7 +25,15 @@ pub fn merge_simple_edges(graph: &mut GclGraph) {
                 let target_in_edge_count = graph
                     .edges_directed(edge.target(), Direction::Incoming)
                     .count();
-                if target_in_edge_count != 1 || !matches!(edge.weight(), GclPredicate::Bool(true)) {
+                if target_in_edge_count != 1
+                    || !matches!(
+                        edge.weight(),
+                        GclExpr {
+                            data: GclExprData::Bool(true),
+                            ..
+                        }
+                    )
+                {
                     continue;
                 }
 

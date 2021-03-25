@@ -1,13 +1,13 @@
 //! Convert P4 to GCL
 
 use crate::gcl::{
-    GclAssignment, GclCommand, GclExpr, GclFact, GclGraph, GclLValue, GclNode, GclNodeRange,
-    GclPredicate, GclValue, MemoryLocation,
+    GclAssignment, GclBinOp, GclCommand, GclExpr, GclFact, GclGraph, GclLValue, GclNode,
+    GclNodeRange, MemoryLocation,
 };
 use crate::ir::{
     IrActionDecl, IrAssignment, IrBlockStatement, IrControlDecl, IrControlLocalDecl, IrDeclaration,
     IrExpr, IrExprData, IrFunctionCall, IrIfStatement, IrInstantiation, IrLValue, IrLValueData,
-    IrProgram, IrStatement, IrStatementOrDecl, IrVariableDecl,
+    IrProgram, IrStatement, IrStatementOrDecl, IrType, IrVariableDecl,
 };
 use crate::type_checker::ProgramMetadata;
 use either::Either;
@@ -42,7 +42,7 @@ impl ToGcl for IrProgram {
                 IrDeclaration::Constant(const_decl) => {
                     // Add onto the node chain
                     let range = const_decl.to_gcl(graph, metadata);
-                    graph.add_edge(node_range.end, range.start, GclPredicate::default());
+                    graph.add_edge(node_range.end, range.start, GclExpr::default());
                     node_range.end = range.end;
                 }
                 // The nodes are added to the graph automatically
@@ -82,7 +82,7 @@ impl ToGcl for IrProgram {
         // FIXME: This is a hard-coded way of connecting start to the control
         //        block. Instead, we should parse the main decl and use that info.
         if let Some(idx) = control_idx {
-            graph.add_edge(start_idx, idx, GclPredicate::default());
+            graph.add_edge(start_idx, idx, GclExpr::default());
         }
 
         start_idx
@@ -148,10 +148,10 @@ impl ToGcl for IrActionDecl {
             // FIXME: remove ret hack
             commands: vec![GclCommand::Assignment(GclAssignment {
                 lvalue: GclLValue::Var(MemoryLocation::ReturnVal),
-                expr: GclExpr::Value(GclValue::Bool(true)),
+                expr: GclExpr::bool(true),
             })],
         });
-        graph.add_edge(start_node_idx, body_range.start, GclPredicate::default());
+        graph.add_edge(start_node_idx, body_range.start, GclExpr::default());
 
         // Note: the action is registered as a function with the graph in
         // ControlDecl::to_gcl so it can be namespaced under the control block.
@@ -184,7 +184,7 @@ impl ToGcl for IrBlockStatement {
 
             // Hook up the node to the end of the node chain
             if let Some(range) = block_start_end {
-                graph.add_edge(range.end, node_idx, GclPredicate::default());
+                graph.add_edge(range.end, node_idx, GclExpr::default());
                 *block_start_end = Some(GclNodeRange {
                     start: range.start,
                     end: node_idx,
@@ -217,7 +217,7 @@ impl ToGcl for IrBlockStatement {
                     }
 
                     if let Some(range) = block_start_end {
-                        graph.add_edge(range.end, start_node, GclPredicate::default());
+                        graph.add_edge(range.end, start_node, GclExpr::default());
                         block_start_end = Some(GclNodeRange {
                             start: range.start,
                             end: end_node,
@@ -288,12 +288,12 @@ impl ToGcl for IrVariableDecl {
                     commands: vec![
                         GclCommand::Assignment(GclAssignment {
                             lvalue: GclLValue::Var(loc),
-                            expr: GclExpr::Var(value_loc),
+                            expr: GclExpr::var(value_loc, value.ty.clone()),
                         }),
                         GclCommand::AddFact(GclFact::HasValue(loc)),
                     ],
                 });
-                graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
+                graph.add_edge(expr_range.end, node_idx, GclExpr::default());
 
                 GclNodeRange {
                     start: expr_range.start,
@@ -342,12 +342,12 @@ impl ToGcl for IrAssignment {
                 GclCommand::AddFact(GclFact::HasValue(lvalue.mem_location())),
                 GclCommand::Assignment(GclAssignment {
                     lvalue,
-                    expr: GclExpr::Var(loc),
+                    expr: GclExpr::var(loc, self.value.ty.clone()),
                 }),
             ],
         });
 
-        graph.add_edge(expr_range.end, node_idx, GclPredicate::default());
+        graph.add_edge(expr_range.end, node_idx, GclExpr::default());
 
         GclNodeRange {
             start: expr_range.start,
@@ -391,8 +391,8 @@ impl ToGcl for IrIfStatement {
 
         // Calculate the if condition predicate and nodes
         let (condition_loc, cond_range) = self.condition.to_gcl(graph, metadata);
-        let pred = GclPredicate::Var(condition_loc);
-        let negated_pred = GclPredicate::Negation(Box::new(pred.clone()));
+        let pred = GclExpr::var(condition_loc, self.condition.ty.clone());
+        let negated_pred = pred.negate();
 
         // Convert the then and else branches to GCL
         let GclNodeRange {
@@ -414,9 +414,9 @@ impl ToGcl for IrIfStatement {
         graph.add_edge(cond_range.end, else_node_idx, negated_pred);
 
         // Add edges to the end node from then and else branches
-        graph.add_edge(then_node_end, end_node_idx, GclPredicate::default());
+        graph.add_edge(then_node_end, end_node_idx, GclExpr::default());
         if let Some(else_range) = else_node_range {
-            graph.add_edge(else_range.end, end_node_idx, GclPredicate::default());
+            graph.add_edge(else_range.end, end_node_idx, GclExpr::default());
         }
 
         GclNodeRange {
@@ -434,7 +434,8 @@ impl ToGcl for IrExpr {
     fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         match &self.data {
             IrExprData::Bool(b) => {
-                let (loc, node_idx) = Self::single_assignment_node(graph, GclValue::Bool(*b));
+                let loc = graph.fresh_mem_location();
+                let node_idx = Self::single_assignment_node(graph, loc, GclExpr::bool(*b));
 
                 (
                     loc,
@@ -448,7 +449,7 @@ impl ToGcl for IrExpr {
                 let loc = graph.get_var_location(*var);
 
                 let assert_idx =
-                    make_assert_node(graph, GclPredicate::Fact(GclFact::HasValue(loc)), None);
+                    make_assert_node(graph, GclExpr::fact(GclFact::HasValue(loc)), None);
 
                 (
                     loc,
@@ -466,16 +467,22 @@ impl ToGcl for IrExpr {
             }
             IrExprData::Negation(inner) => {
                 let (inner_loc, inner_range) = inner.to_gcl(graph, metadata);
+                let inner_pred = GclExpr::var(inner_loc, inner.ty.clone());
                 let loc = graph.fresh_mem_location();
                 let name = graph.create_name("expr");
+
+                let true_idx = Self::single_assignment_node(graph, loc, GclExpr::bool(true));
+                let false_idx = Self::single_assignment_node(graph, loc, GclExpr::bool(false));
+
                 let node_idx = graph.add_node(GclNode {
                     name,
-                    commands: vec![GclCommand::Assignment(GclAssignment {
-                        lvalue: GclLValue::Var(loc),
-                        expr: GclExpr::Negate(inner_loc),
-                    })],
+                    commands: Vec::new(),
                 });
-                graph.add_edge(inner_range.end, node_idx, GclPredicate::default());
+
+                graph.add_edge(inner_range.end, true_idx, inner_pred.negate());
+                graph.add_edge(inner_range.end, false_idx, inner_pred);
+                graph.add_edge(true_idx, node_idx, GclExpr::default());
+                graph.add_edge(false_idx, node_idx, GclExpr::default());
 
                 (
                     loc,
@@ -492,11 +499,14 @@ impl ToGcl for IrExpr {
                     name: graph.create_name("expr_func"),
                     commands: vec![GclCommand::Assignment(GclAssignment {
                         lvalue: GclLValue::Var(loc),
-                        expr: GclExpr::Var(MemoryLocation::ReturnVal),
+                        expr: GclExpr::var(
+                            MemoryLocation::ReturnVal,
+                            IrType::Base(func_call.result_ty.clone()),
+                        ),
                     })],
                 };
                 let node_idx = graph.add_node(node);
-                graph.add_edge(func_range.end, node_idx, GclPredicate::default());
+                graph.add_edge(func_range.end, node_idx, GclExpr::default());
 
                 (
                     loc,
@@ -514,22 +524,20 @@ impl ToGcl for IrExpr {
 }
 
 impl IrExpr {
-    /// Create a node which assigns a value to a new location
+    /// Create a node which assigns a value to a location
     fn single_assignment_node(
         graph: &mut GclGraph,
-        value: GclValue,
-    ) -> (MemoryLocation, NodeIndex) {
+        location: MemoryLocation,
+        value: GclExpr,
+    ) -> NodeIndex {
         let name = graph.create_name("expr");
-        let location = graph.fresh_mem_location();
-        let node_idx = graph.add_node(GclNode {
+        graph.add_node(GclNode {
             name,
             commands: vec![GclCommand::Assignment(GclAssignment {
                 lvalue: GclLValue::Var(location),
-                expr: GclExpr::Value(value),
+                expr: value,
             })],
-        });
-
-        (location, node_idx)
+        })
     }
 
     /// The logic for short-circuiting && and || is very similar, so the
@@ -550,14 +558,14 @@ impl IrExpr {
             name: graph.create_name(&format!("{}_expr_true", op_name)),
             commands: vec![GclCommand::Assignment(GclAssignment {
                 lvalue: GclLValue::Var(result_loc),
-                expr: GclExpr::Value(GclValue::Bool(true)),
+                expr: GclExpr::bool(true),
             })],
         };
         let false_node = GclNode {
             name: graph.create_name(&format!("{}_expr_false", op_name)),
             commands: vec![GclCommand::Assignment(GclAssignment {
                 lvalue: GclLValue::Var(result_loc),
-                expr: GclExpr::Value(GclValue::Bool(false)),
+                expr: GclExpr::bool(false),
             })],
         };
         let end_node = GclNode {
@@ -568,10 +576,10 @@ impl IrExpr {
         let true_node_idx = graph.add_node(true_node);
         let false_node_idx = graph.add_node(false_node);
         let end_node_idx = graph.add_node(end_node);
-        let left_pred = GclPredicate::Var(left_loc);
-        let right_pred = GclPredicate::Var(right_loc);
-        let left_pred_negated = GclPredicate::Negation(Box::new(left_pred.clone()));
-        let right_pred_negated = GclPredicate::Negation(Box::new(right_pred.clone()));
+        let left_pred = GclExpr::var(left_loc, left.ty.clone());
+        let right_pred = GclExpr::var(right_loc, right.ty.clone());
+        let left_pred_negated = left_pred.negate();
+        let right_pred_negated = right_pred.negate();
 
         let (left_to_right, left_to_set) = if is_add {
             (left_pred, left_pred_negated)
@@ -591,8 +599,8 @@ impl IrExpr {
         );
         graph.add_edge(right_range.end, true_node_idx, right_pred);
         graph.add_edge(right_range.end, false_node_idx, right_pred_negated);
-        graph.add_edge(true_node_idx, end_node_idx, GclPredicate::default());
-        graph.add_edge(false_node_idx, end_node_idx, GclPredicate::default());
+        graph.add_edge(true_node_idx, end_node_idx, GclExpr::default());
+        graph.add_edge(false_node_idx, end_node_idx, GclExpr::default());
 
         (
             result_loc,
@@ -620,7 +628,7 @@ impl ToGcl for IrFunctionCall {
             name: start_name,
             commands: vec![GclCommand::Assignment(GclAssignment {
                 lvalue: GclLValue::Var(ret_target_var),
-                expr: GclExpr::Value(GclValue::String(end_name.clone())),
+                expr: GclExpr::string(end_name.clone()),
             })],
         });
         let end_idx = graph.add_node(GclNode {
@@ -628,13 +636,14 @@ impl ToGcl for IrFunctionCall {
             commands: Vec::new(),
         });
 
-        graph.add_edge(start_idx, function_range.start, GclPredicate::default());
+        graph.add_edge(start_idx, function_range.start, GclExpr::default());
         graph.add_edge(
             function_range.end,
             end_idx,
-            GclPredicate::Equality(
-                Box::new(GclPredicate::StringVar(ret_target_var)),
-                Box::new(GclPredicate::String(end_name)),
+            GclExpr::bin_op(
+                GclBinOp::Equals,
+                GclExpr::var(ret_target_var, IrType::string()),
+                GclExpr::string(end_name),
             ),
         );
 
@@ -649,7 +658,7 @@ impl ToGcl for IrFunctionCall {
 /// the `next_node`, otherwise jumps to a new "bug" node.
 fn make_assert_node(
     graph: &mut GclGraph,
-    predicate: GclPredicate,
+    predicate: GclExpr,
     next_node: Option<NodeIndex>,
 ) -> NodeIndex {
     let bug_node = GclNode {
@@ -664,14 +673,10 @@ fn make_assert_node(
     };
     let assert_node_idx = graph.add_node(assert_node);
 
+    graph.add_edge(assert_node_idx, bug_node_idx, predicate.negate());
     if let Some(next_node) = next_node {
-        graph.add_edge(assert_node_idx, next_node, predicate.clone());
+        graph.add_edge(assert_node_idx, next_node, predicate);
     }
-    graph.add_edge(
-        assert_node_idx,
-        bug_node_idx,
-        GclPredicate::Negation(Box::new(predicate)),
-    );
 
     assert_node_idx
 }

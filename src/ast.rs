@@ -61,7 +61,7 @@ pub enum Declaration {
     Instantiation(Instantiation),
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Direction {
     In,
     Out,

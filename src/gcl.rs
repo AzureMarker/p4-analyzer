@@ -1,6 +1,6 @@
 //! Guarded Command Language
 
-use crate::ir::VariableId;
+use crate::ir::{IrType, VariableId};
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::{StableDiGraph, StableGraph};
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::{Deref, DerefMut};
 
 pub struct GclGraph {
-    inner: StableDiGraph<GclNode, GclPredicate>,
+    inner: StableDiGraph<GclNode, GclExpr>,
     next_id_counter: usize,
     functions: HashMap<VariableId, GclNodeRange>,
     var_locations: HashMap<VariableId, MemoryLocation>,
@@ -49,15 +49,18 @@ impl GclGraph {
     }
 
     pub fn get_var_location(&mut self, var: VariableId) -> MemoryLocation {
-        *self
-            .var_locations
-            .entry(var)
-            .or_insert_with(|| self.fresh_mem_location())
+        if let Some(loc) = self.var_locations.get(&var) {
+            return *loc;
+        }
+
+        let loc = self.fresh_mem_location();
+        self.var_locations.insert(var, loc);
+        loc
     }
 }
 
 impl Deref for GclGraph {
-    type Target = StableDiGraph<GclNode, GclPredicate>;
+    type Target = StableDiGraph<GclNode, GclExpr>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -120,41 +123,6 @@ impl Display for GclCommand {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum GclPredicate {
-    Equality(Box<GclPredicate>, Box<GclPredicate>),
-    Conjunction(Box<GclPredicate>, Box<GclPredicate>),
-    Disjunction(Box<GclPredicate>, Box<GclPredicate>),
-    Negation(Box<GclPredicate>),
-    Bool(bool),
-    String(String),
-    Fact(GclFact),
-    Var(MemoryLocation),
-    StringVar(MemoryLocation),
-}
-
-impl Display for GclPredicate {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            GclPredicate::Equality(e1, e2) => write!(f, "({}) = ({})", e1, e2),
-            GclPredicate::Conjunction(p1, p2) => write!(f, "({}) && ({})", p1, p2),
-            GclPredicate::Disjunction(p1, p2) => write!(f, "({}) || ({})", p1, p2),
-            GclPredicate::Negation(pred) => write!(f, "!({})", pred),
-            GclPredicate::Bool(e) => Display::fmt(e, f),
-            GclPredicate::String(s) => Debug::fmt(s, f),
-            GclPredicate::Fact(fact) => Display::fmt(fact, f),
-            GclPredicate::Var(loc) | GclPredicate::StringVar(loc) => Display::fmt(loc, f),
-        }
-    }
-}
-
-impl Default for GclPredicate {
-    /// An always true GCL predicate
-    fn default() -> Self {
-        GclPredicate::Bool(true)
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GclAssignment {
     pub lvalue: GclLValue,
@@ -211,18 +179,87 @@ impl Display for MemoryLocation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum GclValue {
-    Bool(bool),
-    String(String),
-    Struct { fields: Vec<(String, GclValue)> },
+pub struct GclExpr {
+    pub ty: IrType,
+    pub data: GclExprData,
 }
 
-impl Display for GclValue {
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum GclExprData {
+    Bool(bool),
+    String(String),
+    Fact(GclFact),
+    Var(MemoryLocation),
+    BinOp(GclBinOp, Box<GclExpr>, Box<GclExpr>),
+    UnOp(GclUnOp, Box<GclExpr>),
+    Struct { fields: Vec<(String, GclExpr)> },
+}
+
+impl Default for GclExpr {
+    /// An always true GCL predicate
+    fn default() -> Self {
+        GclExpr::bool(true)
+    }
+}
+
+impl GclExpr {
+    pub fn bool(b: bool) -> Self {
+        GclExpr {
+            ty: IrType::bool(),
+            data: GclExprData::Bool(b),
+        }
+    }
+
+    pub fn string(s: String) -> Self {
+        GclExpr {
+            ty: IrType::string(),
+            data: GclExprData::String(s),
+        }
+    }
+
+    pub fn fact(fact: GclFact) -> Self {
+        GclExpr {
+            ty: IrType::bool(),
+            data: GclExprData::Fact(fact),
+        }
+    }
+
+    pub fn var(loc: MemoryLocation, ty: IrType) -> Self {
+        GclExpr {
+            ty,
+            data: GclExprData::Var(loc),
+        }
+    }
+
+    pub fn bin_op(op: GclBinOp, left: GclExpr, right: GclExpr) -> Self {
+        GclExpr {
+            ty: op.ty(),
+            data: GclExprData::BinOp(op, Box::new(left), Box::new(right)),
+        }
+    }
+
+    pub fn negate(&self) -> Self {
+        GclExpr {
+            ty: IrType::bool(),
+            data: GclExprData::UnOp(GclUnOp::Negate, Box::new(self.clone())),
+        }
+    }
+}
+
+impl Display for GclExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            GclValue::Bool(b) => Display::fmt(b, f),
-            GclValue::String(s) => Debug::fmt(s, f),
-            GclValue::Struct { fields } => {
+        match &self.data {
+            GclExprData::Bool(b) => Display::fmt(b, f),
+            GclExprData::String(s) => Debug::fmt(s, f),
+            GclExprData::Fact(fact) => Display::fmt(fact, f),
+            GclExprData::Var(loc) => Display::fmt(loc, f),
+            GclExprData::BinOp(op, left, right) => {
+                write!(f, "({}) {} ({})", left, op, right)
+            }
+            GclExprData::UnOp(op, inner) => {
+                write!(f, "{}({})", op, inner)
+            }
+            GclExprData::Struct { fields } => {
                 f.write_str("{ ")?;
 
                 for (i, (name, value)) in fields.iter().enumerate() {
@@ -241,21 +278,40 @@ impl Display for GclValue {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum GclExpr {
-    Value(GclValue),
-    Var(MemoryLocation),
-    Negate(MemoryLocation),
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum GclBinOp {
+    And,
+    Or,
+    Equals,
 }
 
-impl Display for GclExpr {
+impl Display for GclBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            GclExpr::Value(value) => Display::fmt(value, f),
-            GclExpr::Var(loc) => Display::fmt(loc, f),
-            GclExpr::Negate(loc) => {
-                write!(f, "!({})", loc)
-            }
+            GclBinOp::And => f.write_str("&&"),
+            GclBinOp::Or => f.write_str("||"),
+            GclBinOp::Equals => f.write_str("=="),
+        }
+    }
+}
+
+impl GclBinOp {
+    pub fn ty(&self) -> IrType {
+        match self {
+            GclBinOp::And | GclBinOp::Or | GclBinOp::Equals => IrType::bool(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum GclUnOp {
+    Negate,
+}
+
+impl Display for GclUnOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            GclUnOp::Negate => f.write_char('!'),
         }
     }
 }
@@ -265,11 +321,22 @@ pub enum GclFact {
     HasValue(MemoryLocation),
 }
 
+impl GclFact {
+    /// Get the variable name to use for this fact in Z3
+    pub fn z3_name(&self) -> String {
+        match self {
+            GclFact::HasValue(loc) => {
+                format!("has_value__{}", loc)
+            }
+        }
+    }
+}
+
 impl Display for GclFact {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             GclFact::HasValue(loc) => {
-                write!(f, "has_value({})", loc)
+                write!(f, "HasValue({})", loc)
             }
         }
     }
