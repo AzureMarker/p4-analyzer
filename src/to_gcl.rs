@@ -195,7 +195,7 @@ impl ToGcl for IrBlockStatement {
                     end: node_idx,
                 });
             }
-        };
+        }
 
         // Expand each statement and collect all of the nodes (e.g. from if
         // statements) and simple commands (e.g. variable declarations).

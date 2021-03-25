@@ -246,21 +246,6 @@ impl GclLValue {
     }
 }
 
-// TODO: Replace usages with std's `reduce` when Rust 1.51 is released:
-//       https://github.com/rust-lang/rust/issues/68125
-trait ReduceIter: Iterator {
-    fn reduce<F>(mut self, f: F) -> Option<Self::Item>
-    where
-        Self: Sized,
-        F: FnMut(Self::Item, Self::Item) -> Self::Item,
-    {
-        let first = self.next()?;
-        Some(self.fold(first, f))
-    }
-}
-
-impl<I: Iterator> ReduceIter for I {}
-
 trait RepeatVec: Sized {
     fn repeat_vec(self, times: usize) -> Vec<Self>;
 }
