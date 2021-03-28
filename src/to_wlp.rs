@@ -65,7 +65,11 @@ impl GclGraph {
                         current_facts.insert(fact.clone());
                         continue;
                     }
-                    _ => continue,
+                    GclCommand::RemoveFact(fact) => {
+                        current_facts.remove(fact);
+                        continue;
+                    }
+                    GclCommand::Bug => continue,
                 };
 
                 let loc = lvalue.mem_location();

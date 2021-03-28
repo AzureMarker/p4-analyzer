@@ -1,5 +1,6 @@
 //! Convert P4 to GCL
 
+use crate::ast::Direction;
 use crate::gcl::{
     GclAssignment, GclBinOp, GclCommand, GclExpr, GclFact, GclGraph, GclLValue, GclNode,
     GclNodeRange, MemoryLocation,
@@ -96,6 +97,29 @@ impl ToGcl for IrControlDecl {
 
     fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         let mut commands = Vec::new();
+        let mut param_init_commands = Vec::new();
+        let mut param_end_commands = Vec::new();
+
+        // Add in each param
+        for param in &self.params {
+            let loc = graph.get_var_location(param.id);
+            param_end_commands.push(GclCommand::RemoveFact(GclFact::HasValue(loc)));
+
+            if let Direction::In | Direction::InOut = param.direction {
+                // "in" and "inout" parameters can be read from
+                param_init_commands.push(GclCommand::AddFact(GclFact::HasValue(loc)));
+            }
+        }
+        let param_init_node_name = graph.create_name("control_params_init");
+        let param_end_node_name = graph.create_name("control_params_end");
+        let param_init_node_idx = graph.add_node(GclNode {
+            name: param_init_node_name,
+            commands: param_init_commands,
+        });
+        let param_end_node_idx = graph.add_node(GclNode {
+            name: param_end_node_name,
+            commands: param_end_commands,
+        });
 
         // Collect all of the top level local declarations (e.g. actions) and
         // local declarations (e.g. variables).
@@ -129,12 +153,13 @@ impl ToGcl for IrControlDecl {
 
         // Create the block node
         let block_range = IrBlockStatement(commands).to_gcl(graph, metadata);
+        graph.add_edge(param_init_node_idx, block_range.start, GclExpr::default());
+        graph.add_edge(block_range.end, param_end_node_idx, GclExpr::default());
 
-        // Rename the block node start
-        // TODO: replace with type id
-        graph.node_weight_mut(block_range.start).unwrap().name = format!("control__{}", "todo");
-
-        block_range
+        GclNodeRange {
+            start: param_init_node_idx,
+            end: param_end_node_idx,
+        }
     }
 }
 
@@ -427,8 +452,8 @@ impl ToGcl for IrIfStatement {
 }
 
 impl ToGcl for IrExpr {
-    /// The predicate which holds the boolean value of the expression, plus the
-    /// nodes that calculate the predicate.
+    /// The memory location which holds the value of the expression, plus the
+    /// nodes that set the value of that memory location.
     type Output = (MemoryLocation, GclNodeRange);
 
     fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {

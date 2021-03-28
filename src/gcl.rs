@@ -109,6 +109,7 @@ pub struct GclNodeRange {
 pub enum GclCommand {
     Assignment(GclAssignment),
     AddFact(GclFact),
+    RemoveFact(GclFact),
     /// Represents a bug in the program, ex. if an assert fails
     Bug,
 }
@@ -118,6 +119,7 @@ impl Display for GclCommand {
         match self {
             GclCommand::Assignment(assignment) => Display::fmt(assignment, f),
             GclCommand::AddFact(fact) => write!(f, "add_fact({})", fact),
+            GclCommand::RemoveFact(fact) => write!(f, "remove_fact({})", fact),
             GclCommand::Bug => f.write_str("bug"),
         }
     }
