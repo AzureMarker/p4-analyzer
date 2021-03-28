@@ -552,7 +552,10 @@ impl ToGcl for IrExpr {
                         lvalue: GclLValue::Var(loc),
                         expr: GclExpr {
                             ty: self.ty.clone(),
-                            data: GclExprData::FieldAccess(target_loc, field.clone()),
+                            data: GclExprData::FieldAccess(
+                                Box::new(GclExpr::var(target_loc, target.ty.clone())),
+                                field.clone(),
+                            ),
                         },
                     })],
                 };

@@ -195,7 +195,7 @@ pub enum GclExprData {
     BinOp(GclBinOp, Box<GclExpr>, Box<GclExpr>),
     UnOp(GclUnOp, Box<GclExpr>),
     Struct { fields: Vec<(String, GclExpr)> },
-    FieldAccess(MemoryLocation, String),
+    FieldAccess(Box<GclExpr>, String),
 }
 
 impl Default for GclExpr {
