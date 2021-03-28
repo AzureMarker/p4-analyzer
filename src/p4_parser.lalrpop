@@ -153,9 +153,6 @@ TypeIdentifier: String = "TY_IDENT" => <>.to_string();
 
 Identifier: String = "IDENT" => <>.to_string();
 
-// File path, must contain a period
-Path: String = "FILE_PATH" => <>.to_string();
-
 // Allows trailing element
 Comma<T>: Vec<T> = {
    <mut v:(<T> ",")*> <e:T?> => {
@@ -200,6 +197,5 @@ extern {
         "bool" => Token::Bool,
         "IDENT" => Token::Identifier((<&'input str>, false)),
         "TY_IDENT" => Token::Identifier((<&'input str>, true)),
-        "FILE_PATH" => Token::FilePath(<&'input str>),
     }
 }

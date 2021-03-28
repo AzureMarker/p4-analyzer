@@ -75,8 +75,6 @@ pub enum Token<'input> {
     // The boolean specifies if the identifier is a type identifier
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", callback = is_type_ident)]
     Identifier((&'input str, bool)),
-    #[regex(r"[a-zA-Z0-9_.]+\.[a-zA-Z0-9_]+")]
-    FilePath(&'input str),
 
     // Ignore comments
     #[regex(r"//[^\n]*", logos::skip)]
