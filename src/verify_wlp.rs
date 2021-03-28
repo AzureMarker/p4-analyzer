@@ -47,6 +47,9 @@ impl GclExpr {
             GclExprData::Struct { fields } => {
                 todo!()
             }
+            GclExprData::FieldAccess(_, _) => {
+                todo!()
+            }
         }
     }
 }

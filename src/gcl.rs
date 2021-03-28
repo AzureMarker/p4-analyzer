@@ -195,6 +195,7 @@ pub enum GclExprData {
     BinOp(GclBinOp, Box<GclExpr>, Box<GclExpr>),
     UnOp(GclUnOp, Box<GclExpr>),
     Struct { fields: Vec<(String, GclExpr)> },
+    FieldAccess(MemoryLocation, String),
 }
 
 impl Default for GclExpr {
@@ -275,6 +276,9 @@ impl Display for GclExpr {
                 }
 
                 f.write_str("}")
+            }
+            GclExprData::FieldAccess(loc, field) => {
+                write!(f, "{}.{}", loc, field)
             }
         }
     }

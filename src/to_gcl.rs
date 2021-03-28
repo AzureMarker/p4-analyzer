@@ -2,8 +2,8 @@
 
 use crate::ast::Direction;
 use crate::gcl::{
-    GclAssignment, GclBinOp, GclCommand, GclExpr, GclFact, GclGraph, GclLValue, GclNode,
-    GclNodeRange, MemoryLocation,
+    GclAssignment, GclBinOp, GclCommand, GclExpr, GclExprData, GclFact, GclGraph, GclLValue,
+    GclNode, GclNodeRange, MemoryLocation,
 };
 use crate::ir::{
     IrActionDecl, IrAssignment, IrBlockStatement, IrControlDecl, IrControlLocalDecl, IrDeclaration,
@@ -473,14 +473,19 @@ impl ToGcl for IrExpr {
             IrExprData::Var(var) => {
                 let loc = graph.get_var_location(*var);
 
+                let node = GclNode {
+                    name: graph.create_name("expr_var"),
+                    commands: Vec::new(),
+                };
+                let node_idx = graph.add_node(node);
                 let assert_idx =
-                    make_assert_node(graph, GclExpr::fact(GclFact::HasValue(loc)), None);
+                    make_assert_node(graph, GclExpr::fact(GclFact::HasValue(loc)), node_idx);
 
                 (
                     loc,
                     GclNodeRange {
                         start: assert_idx,
-                        end: assert_idx,
+                        end: node_idx,
                     },
                 )
             }
@@ -524,10 +529,7 @@ impl ToGcl for IrExpr {
                     name: graph.create_name("expr_func"),
                     commands: vec![GclCommand::Assignment(GclAssignment {
                         lvalue: GclLValue::Var(loc),
-                        expr: GclExpr::var(
-                            MemoryLocation::ReturnVal,
-                            IrType::Base(func_call.result_ty.clone()),
-                        ),
+                        expr: GclExpr::var(MemoryLocation::ReturnVal, self.ty.clone()),
                     })],
                 };
                 let node_idx = graph.add_node(node);
@@ -541,8 +543,29 @@ impl ToGcl for IrExpr {
                     },
                 )
             }
-            IrExprData::FieldAccess(_, _) => {
-                todo!()
+            IrExprData::FieldAccess(target, field) => {
+                let (target_loc, target_range) = target.to_gcl(graph, metadata);
+                let loc = graph.fresh_mem_location();
+                let node = GclNode {
+                    name: graph.create_name("expr_field_access"),
+                    commands: vec![GclCommand::Assignment(GclAssignment {
+                        lvalue: GclLValue::Var(loc),
+                        expr: GclExpr {
+                            ty: self.ty.clone(),
+                            data: GclExprData::FieldAccess(target_loc, field.clone()),
+                        },
+                    })],
+                };
+                let node_idx = graph.add_node(node);
+                graph.add_edge(target_range.end, node_idx, GclExpr::default());
+
+                (
+                    loc,
+                    GclNodeRange {
+                        start: target_range.start,
+                        end: node_idx,
+                    },
+                )
             }
         }
     }
@@ -681,11 +704,7 @@ impl ToGcl for IrFunctionCall {
 
 /// Create an assertion node which, when the predicate is true, jumps to
 /// the `next_node`, otherwise jumps to a new "bug" node.
-fn make_assert_node(
-    graph: &mut GclGraph,
-    predicate: GclExpr,
-    next_node: Option<NodeIndex>,
-) -> NodeIndex {
+fn make_assert_node(graph: &mut GclGraph, predicate: GclExpr, next_node: NodeIndex) -> NodeIndex {
     let bug_node = GclNode {
         name: graph.create_name("bug"),
         commands: vec![GclCommand::Bug],
@@ -699,9 +718,7 @@ fn make_assert_node(
     let assert_node_idx = graph.add_node(assert_node);
 
     graph.add_edge(assert_node_idx, bug_node_idx, predicate.negate());
-    if let Some(next_node) = next_node {
-        graph.add_edge(assert_node_idx, next_node, predicate);
-    }
+    graph.add_edge(assert_node_idx, next_node, predicate);
 
     assert_node_idx
 }

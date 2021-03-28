@@ -218,6 +218,36 @@ impl GclExpr {
                     })
                     .collect()
             }
+            GclExprData::FieldAccess(loc, field) => {
+                if let Some(values) = values.get(loc) {
+                    values
+                        .iter()
+                        .map(|value| {
+                            let fields = if let GclExprData::Struct { fields } = &value.data {
+                                fields
+                            } else {
+                                panic!("value in field access is not a struct. Type checking should have caught this.");
+                            };
+
+                            // Return the field's value
+                            fields
+                                .iter()
+                                .find_map(
+                                    |(name, value)| {
+                                        if name == field {
+                                            Some(value.clone())
+                                        } else {
+                                            None
+                                        }
+                                    },
+                                )
+                                .expect("field should exist (thanks to type checking)")
+                        })
+                        .collect()
+                } else {
+                    HashSet::from_iter(Some(self.clone()))
+                }
+            }
         }
     }
 }
