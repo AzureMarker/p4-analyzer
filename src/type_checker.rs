@@ -496,6 +496,7 @@ impl TypeCheck for BaseType {
     fn type_check(&self, _env: &mut EnvironmentStack) -> Result<Self::IrNode, TypeCheckError> {
         match self {
             BaseType::Bool => Ok(IrBaseType::Bool),
+            BaseType::String => Ok(IrBaseType::String),
         }
     }
 }

@@ -23,6 +23,7 @@ pub struct Assignment {
 #[derive(Clone, Debug)]
 pub enum BaseType {
     Bool,
+    String,
     // TODO: Add more base types
 }
 

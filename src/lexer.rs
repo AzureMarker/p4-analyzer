@@ -72,6 +72,8 @@ pub enum Token<'input> {
     False,
     #[token("bool")]
     Bool,
+    #[token("string")]
+    String,
     // The boolean specifies if the identifier is a type identifier
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", callback = is_type_ident)]
     Identifier((&'input str, bool)),

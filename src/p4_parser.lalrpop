@@ -146,7 +146,8 @@ TypeRef: TypeRef = {
 };
 
 BaseType: BaseType = {
-    "bool" => BaseType::Bool
+    "bool" => BaseType::Bool,
+    "string" => BaseType::String,
 };
 
 TypeIdentifier: String = "TY_IDENT" => <>.to_string();
@@ -195,6 +196,7 @@ extern {
         "true" => Token::True,
         "false" => Token::False,
         "bool" => Token::Bool,
+        "string" => Token::String,
         "IDENT" => Token::Identifier((<&'input str>, false)),
         "TY_IDENT" => Token::Identifier((<&'input str>, true)),
     }
