@@ -68,7 +68,7 @@ impl IrBaseType {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IrFunctionType {
     pub result: Box<IrBaseType>,
-    pub inputs: Vec<IrParam>,
+    pub inputs: Vec<(Direction, IrBaseType)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -84,6 +84,7 @@ pub struct IrConstructorType {
 pub struct IrActionDecl {
     pub ty: IrFunctionType,
     pub id: VariableId,
+    pub params: Vec<IrParam>,
     pub body: IrBlockStatement,
 }
 

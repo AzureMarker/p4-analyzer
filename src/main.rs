@@ -15,7 +15,7 @@ use petgraph::dot::Dot;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::IntoNodeReferences;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::ops::Deref;
 use std::time::Instant;
@@ -152,6 +152,8 @@ fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
     println!();
 }
 
+// fn generate_types(types: &HashSet<IrType>) {}
+//
 fn calculate_reachable(
     graph: &GclGraph,
     node_wlp: &HashMap<NodeIndex, GclExpr>,

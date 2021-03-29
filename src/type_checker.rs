@@ -410,11 +410,19 @@ impl TypeCheck for ActionDecl {
 
         let ty = IrFunctionType {
             result: Box::new(IrBaseType::void()),
-            inputs: params,
+            inputs: params
+                .iter()
+                .map(|param| (param.direction, param.ty.clone()))
+                .collect(),
         };
         let id = env.insert_var(self.name.clone(), IrType::Function(ty.clone()))?;
 
-        Ok(IrActionDecl { ty, id, body })
+        Ok(IrActionDecl {
+            ty,
+            id,
+            params,
+            body,
+        })
     }
 }
 
