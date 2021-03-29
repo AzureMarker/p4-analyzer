@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::ops::Deref;
 use std::time::Instant;
-use z3::{Config, Context, SatResult, Solver};
+use z3::{Config, Context, Model, SatResult, Solver};
 
 mod ast;
 mod gcl;
@@ -89,7 +89,9 @@ fn main() {
 
     // Calculate reachability
     let reachable_start = Instant::now();
-    let is_reachable = calculate_reachable(&graph, &node_wlp, only_bugs);
+    let z3_config = Config::new();
+    let z3_context = Context::new(&z3_config);
+    let is_reachable = calculate_reachable(&graph, &node_wlp, &z3_context, only_bugs);
     let time_to_reachable = reachable_start.elapsed();
 
     // Print out the graphviz representation
@@ -154,19 +156,12 @@ fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
 
 // fn generate_types(types: &HashSet<IrType>) {}
 //
-fn calculate_reachable(
+fn calculate_reachable<'ctx>(
     graph: &GclGraph,
     node_wlp: &HashMap<NodeIndex, GclExpr>,
+    context: &'ctx Context,
     only_bugs: bool,
-) -> HashMap<NodeIndex, bool> {
-    // TODO: idea: go in reverse topological sort, propagate reachability
-    //       when the node is reachable and has a single parent (in-edge).
-    //       This would avoid unnecessary Z3 calls, but only in
-    //       full-reachability mode. This also may not be necessary if CFG
-    //       optimizations merge such nodes together.
-
-    let config = Config::new();
-    let context = Context::new(&config);
+) -> HashMap<NodeIndex, Option<Model<'ctx>>> {
     let solver = Solver::new(&context);
 
     graph
@@ -177,21 +172,25 @@ fn calculate_reachable(
             }
 
             let wlp = node_wlp.get(&node_idx).unwrap();
-            solver.assert(&wlp.as_z3_ast(&context).as_bool().unwrap());
-            let is_reachable = solver.check() == SatResult::Sat;
-            solver.reset();
+            let z3_pred = wlp.as_z3_ast(&context).as_bool().unwrap();
+            let z3_result = solver.check_assumptions(&[z3_pred]);
+            if z3_result == SatResult::Sat {
+                let model = solver.get_model().unwrap();
 
-            Some((node_idx, is_reachable))
+                Some((node_idx, Some(model)))
+            } else {
+                Some((node_idx, None))
+            }
         })
         .collect()
 }
 
-fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> String {
+fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, Option<Model>>) -> String {
     let get_node_attributes = |_graph, (node_idx, node): (NodeIndex, &GclNode)| {
         let color = match (node.is_bug(), is_reachable.get(&node_idx)) {
-            (true, Some(true)) => "red",
-            (false, Some(true)) => "green",
-            (_, Some(false)) => "grey",
+            (true, Some(Some(_))) => "red",
+            (false, Some(Some(_))) => "green",
+            (_, Some(None)) => "grey",
             (_, None) => "black",
         };
 
@@ -207,20 +206,34 @@ fn make_graphviz(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>) -> S
     graphviz_graph.to_string()
 }
 
-fn display_bugs(graph: &GclGraph, is_reachable: &HashMap<NodeIndex, bool>, start_idx: NodeIndex) {
+fn display_bugs(
+    graph: &GclGraph,
+    is_reachable: &HashMap<NodeIndex, Option<Model>>,
+    start_idx: NodeIndex,
+) {
     let mut found_bug = false;
 
     for (node_idx, node) in graph.node_references() {
-        if node.is_bug() && *is_reachable.get(&node_idx).unwrap_or(&false) {
-            found_bug = true;
-            let path = path_to(graph, start_idx, node_idx).map(|path| {
-                // Get the name of each node
-                path.into_iter()
-                    .map(|node_idx| graph.node_weight(node_idx).unwrap().name.as_str())
-                    .collect::<Vec<_>>()
-            });
-            println!("Found bug: {:?}\nPath = {:?}", node, path);
+        if !node.is_bug() {
+            continue;
         }
+
+        let model = match is_reachable.get(&node_idx).unwrap_or(&None) {
+            Some(model) => model,
+            None => continue,
+        };
+
+        found_bug = true;
+        let path = path_to(graph, start_idx, node_idx).map(|path| {
+            // Get the name of each node
+            path.into_iter()
+                .map(|node_idx| graph.node_weight(node_idx).unwrap().name.as_str())
+                .collect::<Vec<_>>()
+        });
+        println!(
+            "Found bug: {:?}\nPath = {:?}\nModel = {}",
+            node, path, model
+        );
     }
 
     if !found_bug {
