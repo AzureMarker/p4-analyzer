@@ -92,8 +92,7 @@ fn main() {
     let reachable_start = Instant::now();
     let z3_config = Config::new();
     let z3_context = Context::new(&z3_config);
-    let types = metadata.types.values().collect();
-    let z3_types = generate_types(types, &z3_context);
+    let z3_types = generate_types(&metadata.types, &z3_context);
     let is_reachable = calculate_reachable(&graph, &node_wlp, &z3_context, &z3_types, only_bugs);
     let time_to_reachable = reachable_start.elapsed();
 

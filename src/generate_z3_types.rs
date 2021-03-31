@@ -1,18 +1,21 @@
 use crate::ir::{IrBaseType, IrType};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use z3::{Context, DatatypeAccessor, DatatypeBuilder, DatatypeSort, Sort, Symbol};
 
 pub type Z3TypeMap<'ctx> = HashMap<IrType, DatatypeSort<'ctx>>;
 
 /// Translate the user-defined IR types (ex. structs) into Z3 types
-pub fn generate_types<'ctx>(types: HashSet<&IrType>, context: &'ctx Context) -> Z3TypeMap<'ctx> {
+pub fn generate_types<'ctx>(
+    types: &HashMap<String, IrType>,
+    context: &'ctx Context,
+) -> Z3TypeMap<'ctx> {
     let mut next_id = 0;
     let mut z3_types: Z3TypeMap = HashMap::new();
 
-    for ty in types {
+    for (ty_name, ty) in types {
         match ty {
             IrType::Base(IrBaseType::Struct { fields }) => {
-                let name = format!("struct_{}", next_id);
+                let name = format!("struct_{}__{}", next_id, ty_name);
                 next_id += 1;
                 let builder = DatatypeBuilder::new(context, name.as_str());
 
