@@ -3,7 +3,7 @@ extern crate lalrpop_util;
 
 use crate::ast::Program;
 use crate::gcl::{GclExpr, GclGraph, GclNode};
-use crate::ir::IrType;
+use crate::generate_z3_types::{generate_types, Z3TypeMap};
 use crate::lexer::{LalrpopLexerIter, Token};
 use crate::optimizations::merge_simple_edges;
 use crate::to_gcl::ToGcl;
@@ -15,7 +15,7 @@ use petgraph::dot::Dot;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::IntoNodeReferences;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::Read;
 use std::ops::Deref;
 use std::time::Instant;
@@ -23,6 +23,7 @@ use z3::{Config, Context, Model, SatResult, Solver};
 
 mod ast;
 mod gcl;
+mod generate_z3_types;
 mod ir;
 mod lexer;
 mod optimizations;
@@ -91,7 +92,9 @@ fn main() {
     let reachable_start = Instant::now();
     let z3_config = Config::new();
     let z3_context = Context::new(&z3_config);
-    let is_reachable = calculate_reachable(&graph, &node_wlp, &z3_context, only_bugs);
+    let types = metadata.types.values().collect();
+    let z3_types = generate_types(types, &z3_context);
+    let is_reachable = calculate_reachable(&graph, &node_wlp, &z3_context, &z3_types, only_bugs);
     let time_to_reachable = reachable_start.elapsed();
 
     // Print out the graphviz representation
@@ -154,12 +157,11 @@ fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
     println!();
 }
 
-// fn generate_types(types: &HashSet<IrType>) {}
-//
 fn calculate_reachable<'ctx>(
     graph: &GclGraph,
     node_wlp: &HashMap<NodeIndex, GclExpr>,
     context: &'ctx Context,
+    type_map: &Z3TypeMap<'ctx>,
     only_bugs: bool,
 ) -> HashMap<NodeIndex, Option<Model<'ctx>>> {
     let solver = Solver::new(&context);
@@ -172,7 +174,7 @@ fn calculate_reachable<'ctx>(
             }
 
             let wlp = node_wlp.get(&node_idx).unwrap();
-            let z3_pred = wlp.as_z3_ast(&context).as_bool().unwrap();
+            let z3_pred = wlp.as_z3_ast(&context, &type_map).as_bool().unwrap();
             let z3_result = solver.check_assumptions(&[z3_pred]);
             if z3_result == SatResult::Sat {
                 let model = solver.get_model().unwrap();

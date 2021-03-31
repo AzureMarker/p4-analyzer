@@ -52,27 +52,15 @@ pub fn run_type_checking(
     Ok((new_program, env.into()))
 }
 
-/// Holds some metadata about the program, such as the type of each variable.
-// TODO: do we need this?
+/// Holds some metadata about the program, such as the IR type of each declared type.
+// TODO: do we need this passed through ToGcl?
 pub struct ProgramMetadata {
-    pub var_types: HashMap<VariableId, IrType>,
-    // pub type_names: HashMap<TypeId, String>,
+    pub types: HashMap<String, IrType>,
 }
 
 impl From<EnvironmentStack> for ProgramMetadata {
     fn from(env: EnvironmentStack) -> Self {
-        Self {
-            var_types: env.var_tys,
-            // type_names: env
-            //     .types
-            //     .into_iter()
-            //     .filter_map(|(name, ty)| match ty {
-            //         IrType::Base(IrBaseType::TyVar(id))
-            //         | IrType::Base(IrBaseType::Enum { id, .. }) => Some((id, name)),
-            //         _ => None,
-            //     })
-            //     .collect(),
-        }
+        Self { types: env.types }
     }
 }
 
