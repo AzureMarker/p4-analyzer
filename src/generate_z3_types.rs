@@ -1,14 +1,11 @@
 use crate::ir::{IrBaseType, IrType};
 use std::collections::HashMap;
-use z3::{Context, DatatypeAccessor, DatatypeBuilder, DatatypeSort, Sort, Symbol};
+use z3::{Context, DatatypeAccessor, DatatypeBuilder, DatatypeSort, Sort};
 
 pub type Z3TypeMap<'ctx> = HashMap<IrType, DatatypeSort<'ctx>>;
 
 /// Translate the user-defined IR types (ex. structs) into Z3 types
-pub fn generate_types<'ctx>(
-    types: &HashMap<String, IrType>,
-    context: &'ctx Context,
-) -> Z3TypeMap<'ctx> {
+pub fn generate_types<'ctx>(types: &[(String, IrType)], context: &'ctx Context) -> Z3TypeMap<'ctx> {
     let mut next_id = 0;
     let mut z3_types: Z3TypeMap = HashMap::new();
 
@@ -19,16 +16,22 @@ pub fn generate_types<'ctx>(
                 next_id += 1;
                 let builder = DatatypeBuilder::new(context, name.as_str());
 
+                // FIXME: Maybe this dance can be avoided, context:
+                //        https://github.com/prove-rs/z3.rs/pull/137
+                let bool_sort = Sort::bool(context);
+                let int_sort = Sort::int(context);
+                let string_sort = Sort::string(context);
+
                 let z3_fields = fields
                     .iter()
                     .map(|(field_ty, field_name)| {
                         let datatype_accessor = match field_ty {
-                            IrBaseType::Bool => DatatypeAccessor::Sort(Sort::bool(context)),
-                            IrBaseType::Int => DatatypeAccessor::Sort(Sort::int(context)),
+                            IrBaseType::Bool => DatatypeAccessor::Sort(&bool_sort),
+                            IrBaseType::Int => DatatypeAccessor::Sort(&int_sort),
                             IrBaseType::Bit { .. } => {
                                 todo!()
                             }
-                            IrBaseType::String => DatatypeAccessor::Sort(Sort::string(context)),
+                            IrBaseType::String => DatatypeAccessor::Sort(&string_sort),
                             IrBaseType::Error => {
                                 unimplemented!()
                             }
@@ -43,7 +46,7 @@ pub fn generate_types<'ctx>(
                                     .get(&IrType::Base(field_ty.clone()))
                                     .expect("Use of type before it was declared");
 
-                                DatatypeAccessor::Datatype(Symbol::String(z3_ty.sort.to_string()))
+                                DatatypeAccessor::Sort(&z3_ty.sort)
                             }
                             IrBaseType::Header { .. } => {
                                 todo!()
@@ -57,7 +60,8 @@ pub fn generate_types<'ctx>(
                     })
                     .collect();
 
-                z3_types.insert(ty.clone(), builder.variant(&name, z3_fields).finish());
+                let new_datatype = builder.variant(&name, z3_fields).finish();
+                z3_types.insert(ty.clone(), new_datatype);
             }
             IrType::Base(_) => {}
             IrType::Table => {}

@@ -55,12 +55,14 @@ pub fn run_type_checking(
 /// Holds some metadata about the program, such as the IR type of each declared type.
 // TODO: do we need this passed through ToGcl?
 pub struct ProgramMetadata {
-    pub types: HashMap<String, IrType>,
+    pub types_in_order: Vec<(String, IrType)>,
 }
 
 impl From<EnvironmentStack> for ProgramMetadata {
     fn from(env: EnvironmentStack) -> Self {
-        Self { types: env.types }
+        Self {
+            types_in_order: env.types_in_order,
+        }
     }
 }
 
@@ -80,6 +82,7 @@ struct EnvironmentStack {
     stack: Vec<Environment>,
     var_tys: HashMap<VariableId, IrType>,
     types: HashMap<String, IrType>,
+    types_in_order: Vec<(String, IrType)>,
     const_set: HashSet<VariableId>,
     next_id: usize,
 }
@@ -141,10 +144,11 @@ impl EnvironmentStack {
 
     /// Insert a user-defined type into the map
     fn insert_type(&mut self, name: String, ty: IrType) -> Result<(), TypeCheckError> {
-        if self.types.insert(name.clone(), ty).is_some() {
+        if self.types.insert(name.clone(), ty.clone()).is_some() {
             return Err(TypeCheckError::DuplicateTypeDecl(name));
         }
 
+        self.types_in_order.push((name.clone(), ty));
         Ok(())
     }
 

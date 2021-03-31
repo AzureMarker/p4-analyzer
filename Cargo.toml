@@ -10,7 +10,7 @@ either = "1.6"
 lalrpop-util = "0.19"
 logos = "0.12.0"
 petgraph = { version = "0.5", default-features = false, features = ["stable_graph"] }
-z3 = "0.9"
+z3 = "0.10"
 
 [build-dependencies]
 lalrpop = "0.19"
