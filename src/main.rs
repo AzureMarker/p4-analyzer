@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::ops::Deref;
 use std::time::Instant;
+use z3::ast::Bool;
 use z3::{Config, Context, Model, SatResult, Solver};
 
 mod ast;
@@ -93,12 +94,17 @@ fn main() {
     display_node_vars(&graph, &node_variables);
     display_wlp(&graph, &node_wlp);
 
-    // Calculate reachability
-    let reachable_start = Instant::now();
+    // Convert predicates to Z3
+    let z3_convert_start = Instant::now();
     let z3_config = Config::new();
     let z3_context = Context::new(&z3_config);
     let z3_types = generate_types(&metadata.types_in_order, &z3_context);
-    let is_reachable = calculate_reachable(&graph, &node_wlp, &z3_context, &z3_types, only_bugs);
+    let z3_predicates = convert_to_z3(&graph, &node_wlp, &z3_context, &z3_types, only_bugs);
+    let time_to_convert_z3 = z3_convert_start.elapsed();
+
+    // Calculate reachability
+    let reachable_start = Instant::now();
+    let is_reachable = calculate_reachable(z3_predicates, &z3_context);
     let time_to_reachable = reachable_start.elapsed();
 
     // Print out the graphviz representation
@@ -114,6 +120,7 @@ fn main() {
          Time to convert to GCL: {}ms\n\
          Time to optimize GCL: {}ms\n\
          Time to calculate WLP: {}ms\n\
+         Time to convert to Z3: {}ms\n\
          Time to calculate reachability: {}ms\n\
          Total time: {}ms",
         time_to_parse.as_millis(),
@@ -121,6 +128,7 @@ fn main() {
         time_to_gcl.as_millis(),
         time_to_optimize_gcl.as_millis(),
         time_to_wlp.as_millis(),
+        time_to_convert_z3.as_millis(),
         time_to_reachable.as_millis(),
         parse_start.elapsed().as_millis()
     );
@@ -159,15 +167,13 @@ fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
     }
 }
 
-fn calculate_reachable<'ctx>(
+fn convert_to_z3<'ctx>(
     graph: &GclGraph,
     node_wlp: &HashMap<NodeIndex, GclExpr>,
     context: &'ctx Context,
     type_map: &Z3TypeMap<'ctx>,
     only_bugs: bool,
-) -> HashMap<NodeIndex, Option<Model<'ctx>>> {
-    let solver = Solver::new(&context);
-
+) -> HashMap<NodeIndex, Bool<'ctx>> {
     graph
         .node_references()
         .filter_map(|(node_idx, node)| {
@@ -176,14 +182,30 @@ fn calculate_reachable<'ctx>(
             }
 
             let wlp = node_wlp.get(&node_idx).unwrap();
-            let z3_pred = wlp.as_z3_ast(&context, &type_map).as_bool().unwrap();
+            Some((
+                node_idx,
+                wlp.as_z3_ast(&context, &type_map).as_bool().unwrap(),
+            ))
+        })
+        .collect()
+}
+
+fn calculate_reachable<'ctx>(
+    node_wlp_z3: HashMap<NodeIndex, Bool<'ctx>>,
+    context: &'ctx Context,
+) -> HashMap<NodeIndex, Option<Model<'ctx>>> {
+    let solver = Solver::new(&context);
+
+    node_wlp_z3
+        .into_iter()
+        .map(|(node_idx, z3_pred)| {
             let z3_result = solver.check_assumptions(&[z3_pred]);
             if z3_result == SatResult::Sat {
                 let model = solver.get_model().unwrap();
 
-                Some((node_idx, Some(model)))
+                (node_idx, Some(model))
             } else {
-                Some((node_idx, None))
+                (node_idx, None)
             }
         })
         .collect()
