@@ -113,6 +113,10 @@ impl GclGraph {
             node_facts.insert(node_idx, current_facts);
         }
 
+        for wlp in node_wlp.values_mut() {
+            wlp.simplify();
+        }
+
         (node_wlp, node_variables)
     }
 }

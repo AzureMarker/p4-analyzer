@@ -247,6 +247,66 @@ impl GclExpr {
             data: GclExprData::UnOp(GclUnOp::Negate, Box::new(self.clone())),
         }
     }
+
+    /// Simplify this expression if possible. This is usually only useful for
+    /// expressions which are used as predicates (ex. GCL edges).
+    pub fn simplify(&mut self) {
+        match &mut self.data {
+            GclExprData::Bool(_) => {}
+            GclExprData::String(_) => {}
+            GclExprData::Fact(_) => {}
+            GclExprData::Var(_) => {}
+            GclExprData::BinOp(op, left, right) => {
+                left.simplify();
+                right.simplify();
+
+                match op {
+                    GclBinOp::And => match (&left.data, &right.data) {
+                        (GclExprData::Bool(false), _) | (_, GclExprData::Bool(false)) => {
+                            self.data = GclExprData::Bool(false);
+                        }
+                        (GclExprData::Bool(true), _) => {
+                            *self = (**right).clone();
+                        }
+                        (_, GclExprData::Bool(true)) => {
+                            *self = (**left).clone();
+                        }
+                        _ => {}
+                    },
+                    GclBinOp::Or => match (&left.data, &right.data) {
+                        (GclExprData::Bool(true), _) | (_, GclExprData::Bool(true)) => {
+                            self.data = GclExprData::Bool(true);
+                        }
+                        (GclExprData::Bool(false), _) => {
+                            *self = (**right).clone();
+                        }
+                        (_, GclExprData::Bool(false)) => {
+                            *self = (**left).clone();
+                        }
+                        _ => {}
+                    },
+                    GclBinOp::Equals => {
+                        if left.data == right.data {
+                            self.data = GclExprData::Bool(true);
+                        }
+                    }
+                }
+            }
+            GclExprData::UnOp(op, inner) => {
+                inner.simplify();
+
+                match op {
+                    GclUnOp::Negate => {
+                        if let GclExprData::Bool(b) = &inner.data {
+                            self.data = GclExprData::Bool(!*b);
+                        }
+                    }
+                }
+            }
+            GclExprData::Struct { .. } => {}
+            GclExprData::FieldAccess(_, _) => {}
+        }
+    }
 }
 
 impl Display for GclExpr {

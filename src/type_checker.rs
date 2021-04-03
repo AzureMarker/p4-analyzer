@@ -148,7 +148,7 @@ impl EnvironmentStack {
             return Err(TypeCheckError::DuplicateTypeDecl(name));
         }
 
-        self.types_in_order.push((name.clone(), ty));
+        self.types_in_order.push((name, ty));
         Ok(())
     }
 
