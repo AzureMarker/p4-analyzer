@@ -9,6 +9,7 @@ use crate::optimizations::merge_simple_edges;
 use crate::to_gcl::ToGcl;
 use crate::to_wlp::{VariableMap, WlpMap};
 use crate::type_checker::run_type_checking;
+use env_logger::Env;
 use lalrpop_util::ParseError;
 use logos::Logos;
 use petgraph::dot::Dot;
@@ -16,7 +17,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::IntoNodeReferences;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::ops::Deref;
 use std::time::Instant;
 use z3::{Config, Context, Model, SatResult, Solver};
@@ -38,8 +39,12 @@ lalrpop_mod!(
 );
 
 fn main() {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format(|buf, record| writeln!(buf, "[{}] {}", record.level(), record.args()))
+        .init();
+
     let args: Vec<String> = std::env::args().collect();
-    let args: Vec<&str> = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
 
     // Only check reachability of bug nodes by default
     let mut only_bugs = true;
@@ -68,7 +73,7 @@ fn main() {
     let type_checking_start = Instant::now();
     let (p4_program_ir, metadata) = run_type_checking(&p4_program).unwrap();
     let time_to_type_check = type_checking_start.elapsed();
-    println!("After type checking: {:#?}", p4_program_ir);
+    log::trace!("After type checking: {:#?}", p4_program_ir);
 
     // Convert to GCL
     let gcl_start = Instant::now();
@@ -98,13 +103,13 @@ fn main() {
 
     // Print out the graphviz representation
     let graphviz = make_graphviz(&graph, &is_reachable);
-    println!("\n{}", graphviz);
+    log::info!("{}", graphviz);
 
     // Show all reachable bugs
     display_bugs(&graph, &is_reachable, gcl_start_node);
 
-    println!(
-        "\nTime to parse P4: {}ms\n\
+    log::info!(
+        "Time to parse P4: {}ms\n\
          Time to type check: {}ms\n\
          Time to convert to GCL: {}ms\n\
          Time to optimize GCL: {}ms\n\
@@ -122,17 +127,16 @@ fn main() {
 }
 
 fn display_wlp(graph: &GclGraph, node_wlp: &WlpMap) {
-    println!("Weakest Liberal Preconditions:");
+    log::trace!("Weakest Liberal Preconditions:");
     for (node_idx, wlp) in node_wlp {
         let node_name = &graph.node_weight(*node_idx).unwrap().name;
 
-        println!("Node '{}': {}", node_name, wlp);
+        log::trace!("Node '{}': {}", node_name, wlp);
     }
-    println!();
 }
 
 fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
-    println!("Node Variables:");
+    log::trace!("Node Variables:");
     let mut node_vars: Vec<_> = node_vars
         .iter()
         .map(|(node_idx, values)| (graph.node_weight(*node_idx).unwrap().name.as_str(), values))
@@ -140,9 +144,9 @@ fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
     node_vars.sort_by_key(|(name, _)| *name);
 
     for (node_name, vars) in node_vars {
-        println!("Node '{}':", node_name);
+        log::trace!("Node '{}':", node_name);
         for (var, values) in vars {
-            println!(
+            log::trace!(
                 "    {} = [{}]",
                 var,
                 values
@@ -153,7 +157,6 @@ fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
             );
         }
     }
-    println!();
 }
 
 fn calculate_reachable<'ctx>(
@@ -231,14 +234,16 @@ fn display_bugs(
                 .map(|node_idx| graph.node_weight(node_idx).unwrap().name.as_str())
                 .collect::<Vec<_>>()
         });
-        println!(
+        log::info!(
             "Found bug: {:?}\nPath = {:?}\nModel = {}",
-            node, path, model
+            node,
+            path,
+            model
         );
     }
 
     if !found_bug {
-        println!("No bugs found!");
+        log::info!("No bugs found!");
     }
 }
 
@@ -255,12 +260,12 @@ fn parse(p4_program_str: &str) -> Program {
 
     match p4_parser::ProgramParser::new().parse(p4_program_str, &lexer_state, lexer_iter) {
         Ok(parsed_ast) => {
-            println!("{:#?}\n", parsed_ast);
+            log::trace!("Parsed AST: {:#?}\n", parsed_ast);
             parsed_ast
         }
         Err(ParseError::InvalidToken { location }) => {
             let (line, col) = index_to_line_col(p4_program_str, location);
-            eprintln!("Invalid token at line {}, column {}", line, col);
+            log::error!("Invalid token at line {}, column {}", line, col);
             std::process::exit(1);
         }
         Err(ParseError::UnrecognizedToken {
@@ -268,7 +273,7 @@ fn parse(p4_program_str: &str) -> Program {
             expected,
         }) => {
             let (line, col) = index_to_line_col(p4_program_str, lspan);
-            eprintln!(
+            log::error!(
                 "Unrecognized token '{:?}' at line {}, column {}, expected [{}]",
                 token,
                 line,
@@ -279,7 +284,7 @@ fn parse(p4_program_str: &str) -> Program {
         }
         Err(ParseError::UnrecognizedEOF { location, expected }) => {
             let (line, col) = index_to_line_col(p4_program_str, location);
-            eprintln!(
+            log::error!(
                 "Unexpected EOF at line {}, column {}, expected [{}]",
                 line,
                 col,
@@ -291,16 +296,18 @@ fn parse(p4_program_str: &str) -> Program {
             token: (lspan, token, _rspan),
         }) => {
             let (line, col) = index_to_line_col(p4_program_str, lspan);
-            eprintln!(
+            log::error!(
                 "Unexpected extra token '{:?}' at line {}, column {}",
-                token, line, col
+                token,
+                line,
+                col
             );
             std::process::exit(1);
         }
         Err(ParseError::User { error }) => {
             let token = &p4_program_str[error.clone()];
             let (line, col) = index_to_line_col(p4_program_str, error.start);
-            eprintln!("Invalid token '{}' at line {}, column {}", token, line, col);
+            log::error!("Invalid token '{}' at line {}, column {}", token, line, col);
             std::process::exit(1);
         }
     }

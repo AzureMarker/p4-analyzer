@@ -27,6 +27,7 @@ pub enum IrType {
     Base(IrBaseType),
     Table,
     Function(IrFunctionType),
+    #[allow(unused)]
     Constructor(IrConstructorType),
 }
 
@@ -41,6 +42,7 @@ impl IrType {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[allow(unused)]
 pub enum IrBaseType {
     // TODO: extend these types, e.g. with varbit<> and int<>
     Bool,

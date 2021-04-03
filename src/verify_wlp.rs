@@ -69,7 +69,7 @@ impl GclExpr {
                     IrType::Base(IrBaseType::Struct { fields }) => {
                         fields.iter().position(|(_, name)| name == field).unwrap()
                     }
-                    IrType::Base(IrBaseType::Header { fields }) => todo!(),
+                    IrType::Base(IrBaseType::Header { .. }) => todo!(),
                     _ => panic!(
                         "Type error in Z3 gen: cannot access field of ty: {:?}",
                         target.ty
