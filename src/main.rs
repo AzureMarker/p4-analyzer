@@ -90,8 +90,8 @@ fn main() {
     let wlp_start = Instant::now();
     let (node_wlp, node_variables) = graph.to_wlp();
     let time_to_wlp = wlp_start.elapsed();
-    display_wlp(&graph, &node_wlp);
     display_node_vars(&graph, &node_variables);
+    display_wlp(&graph, &node_wlp);
 
     // Calculate reachability
     let reachable_start = Instant::now();
