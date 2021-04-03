@@ -78,6 +78,7 @@ pub enum Expr {
     Negation(Box<Expr>),
     FunctionCall(FunctionCall),
     FieldAccess(Box<Expr>, String),
+    Struct(Vec<(String, Expr)>),
 }
 
 #[derive(Clone, Debug)]

@@ -143,6 +143,7 @@ pub enum IrExprData {
     Negation(Box<IrExpr>),
     FunctionCall(IrFunctionCall),
     FieldAccess(Box<IrExpr>, String),
+    Struct(Vec<(String, IrExpr)>),
 }
 
 #[derive(Clone, Debug)]

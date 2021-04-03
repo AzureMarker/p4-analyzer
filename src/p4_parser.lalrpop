@@ -13,8 +13,6 @@ Declaration: Declaration = {
     Instantiation => Declaration::Instantiation(<>),
 };
 
-// TODO: support the full struct syntax
-// This is currently only used to introduce type names
 StructDecl: StructDecl = "struct" <name:Identifier> "{" <fields:(<TypeRef> <Identifier> ";")*> "}" => {
     lexer_state.borrow_mut().insert(name.clone());
     StructDecl { name, fields }
@@ -116,6 +114,8 @@ Expr: Expr = {
     #[precedence(level = "0")]
     <target:Expr> "." <field:Identifier>
         => Expr::FieldAccess(Box::new(target), field),
+    #[precedence(level = "0")]
+    "{" <Comma<KeyValue>> "}" => Expr::Struct(<>),
 
     #[precedence(level = "1")]
     "!" <Expr> => Expr::Negation(Box::new(<>)),
@@ -128,6 +128,8 @@ Expr: Expr = {
     #[assoc(side = "left")]
     <left:Expr> "||" <right:Expr> => Expr::Or(Box::new(left), Box::new(right)),
 };
+
+KeyValue = <Identifier> "=" <Expr>;
 
 Bool: bool = {
     "true" => true,

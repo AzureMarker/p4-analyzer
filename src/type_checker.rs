@@ -728,6 +728,23 @@ impl TypeCheck for Expr {
                     data: IrExprData::FieldAccess(Box::new(target_ir), field.clone()),
                 })
             }
+            Expr::Struct(key_values) => {
+                let key_values_ir: Vec<_> = key_values
+                    .iter()
+                    .map(|(key, value)| Ok((key.clone(), value.type_check(env)?)))
+                    .collect::<Result<_, _>>()?;
+                let field_tys = key_values_ir
+                    .iter()
+                    .map(|(key, value_ir)| Ok((value_ir.ty.clone().unwrap_base()?, key.clone())))
+                    .collect::<Result<_, _>>()?;
+
+                let ty = IrType::Base(IrBaseType::Struct { fields: field_tys });
+
+                Ok(IrExpr {
+                    ty,
+                    data: IrExprData::Struct(key_values_ir),
+                })
+            }
         }
     }
 }

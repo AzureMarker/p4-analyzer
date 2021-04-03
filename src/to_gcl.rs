@@ -570,6 +570,60 @@ impl ToGcl for IrExpr {
                     },
                 )
             }
+            IrExprData::Struct(fields) => {
+                // Convert fields to GCL
+                let fields_gcl: Vec<_> = fields
+                    .iter()
+                    .map(|(key, value)| (key, value.ty.clone(), value.to_gcl(graph, metadata)))
+                    .collect();
+
+                // Connect the field initialization nodes
+                let fields_range =
+                    fields_gcl
+                        .iter()
+                        .map(|(_, _, (_, range))| *range)
+                        .reduce(|acc, next| {
+                            graph.add_edge(acc.end, next.start, GclExpr::default());
+                            GclNodeRange {
+                                start: acc.start,
+                                end: next.end,
+                            }
+                        });
+
+                // Build the struct in GCL
+                let fields_gcl = fields_gcl
+                    .into_iter()
+                    .map(|(key, ty, (value, _))| (key.clone(), GclExpr::var(value, ty)))
+                    .collect();
+                let loc = graph.fresh_mem_location();
+                let node = GclNode {
+                    name: graph.create_name("expr_struct"),
+                    commands: vec![GclCommand::Assignment(GclAssignment {
+                        lvalue: GclLValue::Var(loc),
+                        expr: GclExpr {
+                            ty: self.ty.clone(),
+                            data: GclExprData::Struct { fields: fields_gcl },
+                        },
+                    })],
+                };
+                let node_idx = graph.add_node(node);
+
+                // Connect up the field init
+                let start_idx = if let Some(fields_range) = fields_range {
+                    graph.add_edge(fields_range.end, node_idx, GclExpr::default());
+                    fields_range.start
+                } else {
+                    node_idx
+                };
+
+                (
+                    loc,
+                    GclNodeRange {
+                        start: start_idx,
+                        end: node_idx,
+                    },
+                )
+            }
         }
     }
 }

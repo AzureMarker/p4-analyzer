@@ -9,18 +9,18 @@ pub fn generate_types<'ctx>(types: &[(String, IrType)], context: &'ctx Context) 
     let mut next_id = 0;
     let mut z3_types: Z3TypeMap = HashMap::new();
 
+    // FIXME: Maybe this dance can be avoided, context:
+    //        https://github.com/prove-rs/z3.rs/pull/137
+    let bool_sort = Sort::bool(context);
+    let int_sort = Sort::int(context);
+    let string_sort = Sort::string(context);
+
     for (ty_name, ty) in types {
         match ty {
             IrType::Base(IrBaseType::Struct { fields }) => {
                 let name = format!("struct_{}__{}", next_id, ty_name);
                 next_id += 1;
                 let builder = DatatypeBuilder::new(context, name.as_str());
-
-                // FIXME: Maybe this dance can be avoided, context:
-                //        https://github.com/prove-rs/z3.rs/pull/137
-                let bool_sort = Sort::bool(context);
-                let int_sort = Sort::int(context);
-                let string_sort = Sort::string(context);
 
                 let z3_fields = fields
                     .iter()

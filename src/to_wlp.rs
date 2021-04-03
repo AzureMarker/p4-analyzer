@@ -191,7 +191,7 @@ impl GclExpr {
                 }
             }
             GclExprData::Struct { fields } => {
-                let mut structs: Vec<Vec<(String, GclExpr)>> = Vec::new();
+                let mut structs: Vec<Vec<(String, GclExpr)>> = vec![Vec::new()];
 
                 let fields: Vec<_> = fields
                     .iter()
