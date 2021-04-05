@@ -135,11 +135,11 @@ fn main() {
 }
 
 fn display_wlp(graph: &GclGraph, node_wlp: &WlpMap) {
-    log::trace!("Weakest Liberal Preconditions:");
+    log::debug!("Weakest Liberal Preconditions:");
     for (node_idx, wlp) in node_wlp {
         let node_name = &graph.node_weight(*node_idx).unwrap().name;
 
-        log::trace!("Node '{}': {}", node_name, wlp);
+        log::debug!("Node '{}': {}", node_name, wlp);
     }
 }
 
