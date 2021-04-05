@@ -7,8 +7,8 @@ use std::fmt::{Display, Formatter};
 /****************************** IDs ******************************/
 
 /// Each variable will have a unique ID
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct VariableId(pub usize);
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct VariableId(pub usize, pub String);
 
 /// Type variables (i.e. generics) have unique IDs
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -126,7 +126,7 @@ pub enum IrControlLocalDecl {
 #[derive(Debug)]
 pub enum IrDeclaration {
     Control(IrControlDecl),
-    Constant(IrVariableDecl),
+    Constant(Box<IrVariableDecl>),
     Instantiation(IrInstantiation),
 }
 
@@ -184,7 +184,7 @@ pub struct IrLValue {
 impl IrLValue {
     pub fn var_id(&self) -> VariableId {
         match &self.data {
-            IrLValueData::Var(id) => *id,
+            IrLValueData::Var(id) => id.clone(),
             IrLValueData::Field(target, _) => target.var_id(),
         }
     }

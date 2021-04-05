@@ -99,7 +99,7 @@ impl EnvironmentStack {
             .iter()
             .rev()
             .filter_map(|env| env.variables.get(name))
-            .copied()
+            .cloned()
             .next()?;
         let ty = self.var_tys.get(&id)?;
 
@@ -125,10 +125,10 @@ impl EnvironmentStack {
             return Err(TypeCheckError::DuplicateDecl(name));
         }
 
-        let id = VariableId(self.next_id);
+        let id = VariableId(self.next_id, name.clone());
         self.next_id += 1;
-        self.var_tys.insert(id, ty);
-        env.variables.insert(name, id);
+        self.var_tys.insert(id.clone(), ty);
+        env.variables.insert(name, id.clone());
 
         Ok(id)
     }
@@ -271,9 +271,9 @@ impl TypeCheck for Declaration {
             Declaration::Control(control_decl) => {
                 Ok(Some(IrDeclaration::Control(control_decl.type_check(env)?)))
             }
-            Declaration::Constant(const_decl) => {
-                Ok(Some(IrDeclaration::Constant(const_decl.type_check(env)?)))
-            }
+            Declaration::Constant(const_decl) => Ok(Some(IrDeclaration::Constant(Box::new(
+                const_decl.type_check(env)?,
+            )))),
             Declaration::Instantiation(instantiation) => Ok(Some(IrDeclaration::Instantiation(
                 instantiation.type_check(env)?,
             ))),
@@ -502,7 +502,7 @@ impl TypeCheck for ConstantDecl {
         let id = env.insert_var(self.name.clone(), ty.clone())?;
 
         assert_ty(&value.ty, &ty)?;
-        env.mark_const(id);
+        env.mark_const(id.clone());
 
         Ok(IrVariableDecl {
             ty,

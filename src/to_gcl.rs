@@ -102,13 +102,14 @@ impl ToGcl for IrControlDecl {
 
         // Add in each param
         for param in &self.params {
-            let loc = graph.get_var_location(param.id);
-            param_end_commands.push(GclCommand::RemoveFact(GclFact::HasValue(loc)));
+            let loc = graph.get_var_location(&param.id);
 
             if let Direction::In | Direction::InOut = param.direction {
                 // "in" and "inout" parameters can be read from
-                param_init_commands.push(GclCommand::AddFact(GclFact::HasValue(loc)));
+                param_init_commands.push(GclCommand::AddFact(GclFact::HasValue(loc.clone())));
             }
+
+            param_end_commands.push(GclCommand::RemoveFact(GclFact::HasValue(loc)));
         }
         let param_init_node_name = graph.create_name("control_params_init");
         let param_end_node_name = graph.create_name("control_params_end");
@@ -138,7 +139,7 @@ impl ToGcl for IrControlDecl {
                     graph.register_function(
                         // FIXME: Check if we actually need namespacing
                         // format!("{}::{}", self.name, action_decl.name),
-                        action_decl.id,
+                        action_decl.id.clone(),
                         action_range,
                     );
                 }
@@ -302,7 +303,7 @@ impl ToGcl for IrVariableDecl {
     type Output = GclNodeRange;
 
     fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
-        let loc = graph.get_var_location(self.id);
+        let loc = graph.get_var_location(&self.id);
         let name = graph.create_name(&format!("var_decl__{}", self.id));
 
         match self.value.as_ref() {
@@ -312,7 +313,7 @@ impl ToGcl for IrVariableDecl {
                     name,
                     commands: vec![
                         GclCommand::Assignment(GclAssignment {
-                            lvalue: GclLValue::Var(loc),
+                            lvalue: GclLValue::Var(loc.clone()),
                             expr: GclExpr::var(value_loc, value.ty.clone()),
                         }),
                         GclCommand::AddFact(GclFact::HasValue(loc)),
@@ -344,7 +345,7 @@ impl ToGcl for IrInstantiation {
     type Output = GclCommand;
 
     fn to_gcl(&self, graph: &mut GclGraph, _metadata: &ProgramMetadata) -> Self::Output {
-        let loc = graph.get_var_location(self.id);
+        let loc = graph.get_var_location(&self.id);
 
         // TODO: there should be a lot more happening here
 
@@ -387,7 +388,7 @@ impl ToGcl for IrLValue {
     fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         match &self.data {
             IrLValueData::Var(var_id) => {
-                let loc = graph.get_var_location(*var_id);
+                let loc = graph.get_var_location(var_id);
 
                 GclLValue::Var(loc)
             }
@@ -459,8 +460,8 @@ impl ToGcl for IrExpr {
     fn to_gcl(&self, graph: &mut GclGraph, metadata: &ProgramMetadata) -> Self::Output {
         match &self.data {
             IrExprData::Bool(b) => {
-                let loc = graph.fresh_mem_location();
-                let node_idx = Self::single_assignment_node(graph, loc, GclExpr::bool(*b));
+                let loc = graph.fresh_mem_location(None);
+                let node_idx = Self::single_assignment_node(graph, loc.clone(), GclExpr::bool(*b));
 
                 (
                     loc,
@@ -471,15 +472,18 @@ impl ToGcl for IrExpr {
                 )
             }
             IrExprData::Var(var) => {
-                let loc = graph.get_var_location(*var);
+                let loc = graph.get_var_location(var);
 
                 let node = GclNode {
                     name: graph.create_name("expr_var"),
                     commands: Vec::new(),
                 };
                 let node_idx = graph.add_node(node);
-                let assert_idx =
-                    make_assert_node(graph, GclExpr::fact(GclFact::HasValue(loc)), node_idx);
+                let assert_idx = make_assert_node(
+                    graph,
+                    GclExpr::fact(GclFact::HasValue(loc.clone())),
+                    node_idx,
+                );
 
                 (
                     loc,
@@ -498,11 +502,13 @@ impl ToGcl for IrExpr {
             IrExprData::Negation(inner) => {
                 let (inner_loc, inner_range) = inner.to_gcl(graph, metadata);
                 let inner_pred = GclExpr::var(inner_loc, inner.ty.clone());
-                let loc = graph.fresh_mem_location();
+                let loc = graph.fresh_mem_location(None);
                 let name = graph.create_name("expr");
 
-                let true_idx = Self::single_assignment_node(graph, loc, GclExpr::bool(true));
-                let false_idx = Self::single_assignment_node(graph, loc, GclExpr::bool(false));
+                let true_idx =
+                    Self::single_assignment_node(graph, loc.clone(), GclExpr::bool(true));
+                let false_idx =
+                    Self::single_assignment_node(graph, loc.clone(), GclExpr::bool(false));
 
                 let node_idx = graph.add_node(GclNode {
                     name,
@@ -524,11 +530,11 @@ impl ToGcl for IrExpr {
             }
             IrExprData::FunctionCall(func_call) => {
                 let func_range = func_call.to_gcl(graph, metadata);
-                let loc = graph.fresh_mem_location();
+                let loc = graph.fresh_mem_location(None);
                 let node = GclNode {
                     name: graph.create_name("expr_func"),
                     commands: vec![GclCommand::Assignment(GclAssignment {
-                        lvalue: GclLValue::Var(loc),
+                        lvalue: GclLValue::Var(loc.clone()),
                         expr: GclExpr::var(MemoryLocation::ReturnVal, self.ty.clone()),
                     })],
                 };
@@ -545,11 +551,11 @@ impl ToGcl for IrExpr {
             }
             IrExprData::FieldAccess(target, field) => {
                 let (target_loc, target_range) = target.to_gcl(graph, metadata);
-                let loc = graph.fresh_mem_location();
+                let loc = graph.fresh_mem_location(None);
                 let node = GclNode {
                     name: graph.create_name("expr_field_access"),
                     commands: vec![GclCommand::Assignment(GclAssignment {
-                        lvalue: GclLValue::Var(loc),
+                        lvalue: GclLValue::Var(loc.clone()),
                         expr: GclExpr {
                             ty: self.ty.clone(),
                             data: GclExprData::FieldAccess(
@@ -595,11 +601,11 @@ impl ToGcl for IrExpr {
                     .into_iter()
                     .map(|(key, ty, (value, _))| (key.clone(), GclExpr::var(value, ty)))
                     .collect();
-                let loc = graph.fresh_mem_location();
+                let loc = graph.fresh_mem_location(None);
                 let node = GclNode {
                     name: graph.create_name("expr_struct"),
                     commands: vec![GclCommand::Assignment(GclAssignment {
-                        lvalue: GclLValue::Var(loc),
+                        lvalue: GclLValue::Var(loc.clone()),
                         expr: GclExpr {
                             ty: self.ty.clone(),
                             data: GclExprData::Struct { fields: fields_gcl },
@@ -656,20 +662,20 @@ impl IrExpr {
     ) -> (MemoryLocation, GclNodeRange) {
         let (left_loc, left_range) = left.to_gcl(graph, metadata);
         let (right_loc, right_range) = right.to_gcl(graph, metadata);
-        let result_loc = graph.fresh_mem_location();
+        let result_loc = graph.fresh_mem_location(None);
         let op_name = if is_add { "add" } else { "or" };
 
         let true_node = GclNode {
             name: graph.create_name(&format!("{}_expr_true", op_name)),
             commands: vec![GclCommand::Assignment(GclAssignment {
-                lvalue: GclLValue::Var(result_loc),
+                lvalue: GclLValue::Var(result_loc.clone()),
                 expr: GclExpr::bool(true),
             })],
         };
         let false_node = GclNode {
             name: graph.create_name(&format!("{}_expr_false", op_name)),
             commands: vec![GclCommand::Assignment(GclAssignment {
-                lvalue: GclLValue::Var(result_loc),
+                lvalue: GclLValue::Var(result_loc.clone()),
                 expr: GclExpr::bool(false),
             })],
         };
@@ -723,16 +729,16 @@ impl ToGcl for IrFunctionCall {
     fn to_gcl(&self, graph: &mut GclGraph, _metadata: &ProgramMetadata) -> Self::Output {
         // TODO: handle setting arguments and verifying args have values
         let function_range = graph
-            .get_function(self.target)
+            .get_function(&self.target)
             .unwrap_or_else(|| panic!("Unable to find function {}", self.target));
 
         let start_name = graph.create_name("func_call_start");
         let end_name = graph.create_name("func_call_end");
-        let ret_target_var = graph.fresh_mem_location();
+        let ret_target_var = graph.fresh_mem_location(None);
         let start_idx = graph.add_node(GclNode {
             name: start_name,
             commands: vec![GclCommand::Assignment(GclAssignment {
-                lvalue: GclLValue::Var(ret_target_var),
+                lvalue: GclLValue::Var(ret_target_var.clone()),
                 expr: GclExpr::string(end_name.clone()),
             })],
         });

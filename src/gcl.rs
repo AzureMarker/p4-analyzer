@@ -32,8 +32,8 @@ impl GclGraph {
         name
     }
 
-    pub fn fresh_mem_location(&mut self) -> MemoryLocation {
-        let loc = MemoryLocation::Var(self.next_id_counter);
+    pub fn fresh_mem_location(&mut self, name: Option<String>) -> MemoryLocation {
+        let loc = MemoryLocation::Var(self.next_id_counter, name);
         self.next_id_counter += 1;
         loc
     }
@@ -44,17 +44,17 @@ impl GclGraph {
         self.functions.insert(id, range);
     }
 
-    pub fn get_function(&self, id: VariableId) -> Option<GclNodeRange> {
-        self.functions.get(&id).copied()
+    pub fn get_function(&self, id: &VariableId) -> Option<GclNodeRange> {
+        self.functions.get(id).copied()
     }
 
-    pub fn get_var_location(&mut self, var: VariableId) -> MemoryLocation {
-        if let Some(loc) = self.var_locations.get(&var) {
-            return *loc;
+    pub fn get_var_location(&mut self, var: &VariableId) -> MemoryLocation {
+        if let Some(loc) = self.var_locations.get(var) {
+            return loc.clone();
         }
 
-        let loc = self.fresh_mem_location();
-        self.var_locations.insert(var, loc);
+        let loc = self.fresh_mem_location(Some(var.1.clone()));
+        self.var_locations.insert(var.clone(), loc.clone());
         loc
     }
 }
@@ -146,7 +146,7 @@ pub enum GclLValue {
 impl GclLValue {
     pub fn mem_location(&self) -> MemoryLocation {
         match self {
-            GclLValue::Var(loc) => *loc,
+            GclLValue::Var(loc) => loc.clone(),
             GclLValue::Field(target, _) => target.mem_location(),
         }
     }
@@ -163,18 +163,21 @@ impl Display for GclLValue {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MemoryLocation {
     ReturnVal,
-    Var(usize),
+    Var(usize, Option<String>),
 }
 
 impl Display for MemoryLocation {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             MemoryLocation::ReturnVal => f.write_str("loc_ret"),
-            MemoryLocation::Var(id) => {
+            MemoryLocation::Var(id, None) => {
                 write!(f, "loc_{}", id)
+            }
+            MemoryLocation::Var(id, Some(name)) => {
+                write!(f, "loc_{}_{}", id, name)
             }
         }
     }

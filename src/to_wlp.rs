@@ -41,7 +41,7 @@ impl GclGraph {
                 for (loc, values) in *variables {
                     if parent_variables.iter().all(|map| map.contains_key(loc)) {
                         current_variables
-                            .entry(*loc)
+                            .entry(loc.clone())
                             .or_default()
                             .extend(values.iter().cloned());
                     }
@@ -268,7 +268,7 @@ impl GclLValue {
         loop {
             match current {
                 GclLValue::Var(loc) => {
-                    entries.push(GclLValueEntry::Var(*loc));
+                    entries.push(GclLValueEntry::Var(loc.clone()));
                     break;
                 }
                 GclLValue::Field(target, field) => {

@@ -18,7 +18,7 @@ pub fn generate_types<'ctx>(types: &[(String, IrType)], context: &'ctx Context) 
     for (ty_name, ty) in types {
         match ty {
             IrType::Base(IrBaseType::Struct { fields }) => {
-                let name = format!("struct_{}__{}", next_id, ty_name);
+                let name = format!("struct_{}_{}", next_id, ty_name);
                 next_id += 1;
                 let builder = DatatypeBuilder::new(context, name.as_str());
 
