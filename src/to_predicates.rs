@@ -9,14 +9,14 @@ use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::ops::Deref;
 
-pub type WlpMap = HashMap<NodeIndex, GclExpr>;
+pub type PredicateMap = HashMap<NodeIndex, GclExpr>;
 pub type VariableMap = HashMap<NodeIndex, HashMap<MemoryLocation, HashSet<GclExpr>>>;
 pub type FactSets = HashMap<NodeIndex, HashSet<GclFact>>;
 
 impl GclGraph {
-    pub fn to_wlp(&self) -> (WlpMap, VariableMap) {
+    pub fn to_reachability_predicates(&self) -> (PredicateMap, VariableMap) {
         let mut topological_iter = Topo::new(self.deref());
-        let mut node_wlp: WlpMap = HashMap::new();
+        let mut node_preds: PredicateMap = HashMap::new();
         let mut node_variables: VariableMap = HashMap::new();
         let mut node_facts: FactSets = HashMap::new();
 
@@ -82,12 +82,12 @@ impl GclGraph {
                 current_variables.insert(loc, new_exprs);
             }
 
-            // Calculate the WLP for each incoming edge
-            let edge_wlps = self
+            // Calculate the predicate for each incoming edge
+            let edge_preds = self
                 .edges_directed(node_idx, Direction::Incoming)
                 .map(|edge| {
                     let parent_idx = edge.source();
-                    let parent_wlp = node_wlp.get(&parent_idx).unwrap();
+                    let parent_pred = node_preds.get(&parent_idx).unwrap();
                     let parent_vars = node_variables.get(&parent_idx).unwrap();
                     let parent_facts = node_facts.get(&parent_idx).unwrap();
                     let edge_pred = edge
@@ -99,25 +99,25 @@ impl GclGraph {
 
                     // The parent's predicate and this edge's predicate have to
                     // be true in order for the node to be reachable via this edge
-                    GclExpr::bin_op(GclBinOp::And, parent_wlp.clone(), edge_pred)
+                    GclExpr::bin_op(GclBinOp::And, parent_pred.clone(), edge_pred)
                 });
 
-            // Calculate this node's WLP by taking an OR of the edge WLPs
-            let wlp = edge_wlps
+            // Calculate this node's predicate by taking an OR of the edge prdicates
+            let predicate = edge_preds
                 .reduce(|acc, next| GclExpr::bin_op(GclBinOp::Or, acc, next))
                 .unwrap_or_default();
 
-            // Update the accumulated variables and WLPs
+            // Update the accumulated variables and predicates
             node_variables.insert(node_idx, current_variables);
-            node_wlp.insert(node_idx, wlp);
+            node_preds.insert(node_idx, predicate);
             node_facts.insert(node_idx, current_facts);
         }
 
-        for wlp in node_wlp.values_mut() {
-            wlp.simplify();
+        for predicate in node_preds.values_mut() {
+            predicate.simplify();
         }
 
-        (node_wlp, node_variables)
+        (node_preds, node_variables)
     }
 }
 

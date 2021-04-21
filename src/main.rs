@@ -7,7 +7,7 @@ use crate::generate_z3_types::{generate_types, Z3TypeMap};
 use crate::lexer::{LalrpopLexerIter, Token};
 use crate::optimizations::merge_simple_edges;
 use crate::to_gcl::ToGcl;
-use crate::to_wlp::{VariableMap, WlpMap};
+use crate::to_predicates::{PredicateMap, VariableMap};
 use crate::type_checker::run_type_checking;
 use env_logger::Env;
 use lalrpop_util::ParseError;
@@ -30,9 +30,9 @@ mod ir;
 mod lexer;
 mod optimizations;
 mod to_gcl;
-mod to_wlp;
+mod to_predicates;
 mod type_checker;
-mod verify_wlp;
+mod to_z3;
 
 lalrpop_mod!(
     #[allow(clippy::all)]
@@ -70,7 +70,7 @@ fn main() {
     let p4_program = parse(&p4_program_str);
     let time_to_parse = parse_start.elapsed();
 
-    // Analyze P4
+    // Type check P4
     let type_checking_start = Instant::now();
     let (p4_program_ir, metadata) = run_type_checking(&p4_program).unwrap();
     let time_to_type_check = type_checking_start.elapsed();
@@ -87,19 +87,19 @@ fn main() {
     merge_simple_edges(&mut graph);
     let time_to_optimize_gcl = gcl_optimize_start.elapsed();
 
-    // Calculate the weakest liberal precondition for each node
-    let wlp_start = Instant::now();
-    let (node_wlp, node_variables) = graph.to_wlp();
-    let time_to_wlp = wlp_start.elapsed();
+    // Calculate a reachability predicate for each node
+    let reachability_start = Instant::now();
+    let (node_predicates, node_variables) = graph.to_reachability_predicates();
+    let time_to_reachability = reachability_start.elapsed();
     display_node_vars(&graph, &node_variables);
-    display_wlp(&graph, &node_wlp);
+    display_reachability(&graph, &node_predicates);
 
     // Convert predicates to Z3
     let z3_convert_start = Instant::now();
     let z3_config = Config::new();
     let z3_context = Context::new(&z3_config);
     let z3_types = generate_types(&metadata.types_in_order, &z3_context);
-    let z3_predicates = convert_to_z3(&graph, &node_wlp, &z3_context, &z3_types, only_bugs);
+    let z3_predicates = convert_to_z3(&graph, &node_predicates, &z3_context, &z3_types, only_bugs);
     let time_to_convert_z3 = z3_convert_start.elapsed();
 
     // Calculate reachability
@@ -119,7 +119,7 @@ fn main() {
          Time to type check: {}ms\n\
          Time to convert to GCL: {}ms\n\
          Time to optimize GCL: {}ms\n\
-         Time to calculate WLP: {}ms\n\
+         Time to build reachability predicates: {}ms\n\
          Time to convert to Z3: {}ms\n\
          Time to calculate reachability: {}ms\n\
          Total time: {}ms",
@@ -127,19 +127,19 @@ fn main() {
         time_to_type_check.as_millis(),
         time_to_gcl.as_millis(),
         time_to_optimize_gcl.as_millis(),
-        time_to_wlp.as_millis(),
+        time_to_reachability.as_millis(),
         time_to_convert_z3.as_millis(),
         time_to_reachable.as_millis(),
         parse_start.elapsed().as_millis()
     );
 }
 
-fn display_wlp(graph: &GclGraph, node_wlp: &WlpMap) {
-    log::debug!("Weakest Liberal Preconditions:");
-    for (node_idx, wlp) in node_wlp {
+fn display_reachability(graph: &GclGraph, node_preds: &PredicateMap) {
+    log::debug!("Reachability Predicates:");
+    for (node_idx, pred) in node_preds {
         let node_name = &graph.node_weight(*node_idx).unwrap().name;
 
-        log::debug!("Node '{}': {}", node_name, wlp);
+        log::debug!("Node '{}': {}", node_name, pred);
     }
 }
 
@@ -169,7 +169,7 @@ fn display_node_vars(graph: &GclGraph, node_vars: &VariableMap) {
 
 fn convert_to_z3<'ctx>(
     graph: &GclGraph,
-    node_wlp: &HashMap<NodeIndex, GclExpr>,
+    node_predicates: &HashMap<NodeIndex, GclExpr>,
     context: &'ctx Context,
     type_map: &Z3TypeMap<'ctx>,
     only_bugs: bool,
@@ -181,22 +181,22 @@ fn convert_to_z3<'ctx>(
                 return None;
             }
 
-            let wlp = node_wlp.get(&node_idx).unwrap();
+            let pred = node_predicates.get(&node_idx).unwrap();
             Some((
                 node_idx,
-                wlp.as_z3_ast(&context, &type_map).as_bool().unwrap(),
+                pred.as_z3_ast(&context, &type_map).as_bool().unwrap(),
             ))
         })
         .collect()
 }
 
 fn calculate_reachable<'ctx>(
-    node_wlp_z3: HashMap<NodeIndex, Bool<'ctx>>,
+    z3_predicates: HashMap<NodeIndex, Bool<'ctx>>,
     context: &'ctx Context,
 ) -> HashMap<NodeIndex, Option<Model<'ctx>>> {
     let solver = Solver::new(&context);
 
-    node_wlp_z3
+    z3_predicates
         .into_iter()
         .map(|(node_idx, z3_pred)| {
             let z3_result = solver.check_assumptions(&[z3_pred]);
