@@ -1,4 +1,4 @@
-# static-bf4
+# p4-analyzer
 This tool aims to validate various safety properties of [P4] programs.
 It does this by first converting P4 code to a [CFG] (Control Flow Graph)
 inspired by [GCL], then generating logical predicates which are used to check
@@ -18,7 +18,7 @@ Now that Rust and Z3 are installed, use `cargo` to build the project
 cargo build --release
 ```
 
-The compiled binary is located at `target/release/static-bf4`.
+The compiled binary is located at `target/release/p4-analyzer`.
 
 [P4]: https://en.wikipedia.org/wiki/P4_(programming_language)
 [CFG]: https://en.wikipedia.org/wiki/Control-flow_graph

@@ -324,6 +324,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13bd41f508810a131401606d54ac32a467c97172d74ba7662562ebba5ad07fa0"
 
 [[package]]
+name = "p4-analyzer"
+version = "0.1.0"
+dependencies = [
+ "either",
+ "env_logger",
+ "lalrpop",
+ "lalrpop-util",
+ "log",
+ "logos",
+ "petgraph",
+ "z3",
+]
+
+[[package]]
 name = "petgraph"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -424,20 +438,6 @@ name = "siphasher"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa8f3741c7372e75519bd9346068370c9cdaabcc1f9599cbcf2a2719352286b7"
-
-[[package]]
-name = "static-bf4"
-version = "0.1.0"
-dependencies = [
- "either",
- "env_logger",
- "lalrpop",
- "lalrpop-util",
- "log",
- "logos",
- "petgraph",
- "z3",
-]
 
 [[package]]
 name = "string_cache"

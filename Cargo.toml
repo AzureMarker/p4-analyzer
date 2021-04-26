@@ -1,5 +1,5 @@
 [package]
-name = "static-bf4"
+name = "p4-analyzer"
 description = "Static analysis tool which checks P4 code for bugs"
 version = "0.1.0"
 authors = ["Mark Drobnak <mtd8050@rit.edu>"]
