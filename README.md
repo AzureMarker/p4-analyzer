@@ -4,6 +4,12 @@ It does this by first converting P4 code to a [CFG] (Control Flow Graph)
 inspired by [GCL], then generating logical predicates which are used to check
 the reachability of bugs.
 
+[Capstone Paper](capstone-paper.pdf)
+
+[Capstone Poster:](capstone-poster.pdf)
+
+![Capstone Poster](capstone-poster.png)
+
 ## Build
 This project is written in Rust, so first install Rust:
 https://www.rust-lang.org/tools/install
