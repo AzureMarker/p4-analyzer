@@ -4,7 +4,7 @@ It does this by first converting P4 code to a [CFG] (Control Flow Graph)
 inspired by [GCL], then generating logical predicates which are used to check
 the reachability of bugs.
 
-[Capstone Paper](capstone-paper.pdf)
+[Capstone Report](capstone-report.pdf)
 
 [Capstone Poster:](capstone-poster.pdf)
 
